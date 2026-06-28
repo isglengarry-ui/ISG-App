@@ -1,0 +1,9 @@
+brand,model_name,model_code,priority,matched_to,match_type
+HP,HP LaserJet Pro MFP M428fdw,M428FDW,high,HP LaserJet Pro M428fdw,fuzzy_name
+HP,HP Smart Tank 515,515,high,HP Smart Tank 515,exact_key
+Canon,Canon PIXMA TS3150,TS3150,high,PIXMA TS3150,fuzzy_name
+Canon,Canon PIXMA G3470,G3470,high,Canon PIXMA G3470,exact_key
+Epson,Epson EcoTank L3250,L3250,high,Epson EcoTank L3250,fuzzy_name
+Epson,Epson EcoTank L4260,L4260,high,Epson EcoTank L4260,fuzzy_name
+Brother,Brother DCP-T420W,T420W,medium,Brother DCP-T420W,exact_key
+Brother,Brother HL-L2350DW,L2350DW,medium,Brother HL-L2350DW,fuzzy_name

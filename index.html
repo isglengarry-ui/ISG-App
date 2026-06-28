@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ISG Operations App MVP</title>
+    <link rel="stylesheet" href="./styles.css?v=21" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>ISG Operations App</h1>
+      <div class="topbar-search">
+        <input id="job-search" type="search" placeholder="Search job #, customer, email, phone…" autocomplete="off" />
+      </div>
+      <div class="role">
+        <label for="role">Role</label>
+        <select id="role">
+          <option value="staff">Staff</option>
+          <option value="owner">Owner</option>
+        </select>
+      </div>
+      <div class="role">
+        <label for="cleanMode">Clean Board</label>
+        <input id="cleanMode" type="checkbox" />
+      </div>
+      <div class="role">
+        <label for="staff-name">Staff</label>
+        <select id="staff-name">
+          <option value="">— select —</option>
+          <option value="Chad">Chad</option>
+          <option value="Toufiecka">Toufiecka</option>
+          <option value="Faith">Faith</option>
+          <option value="Wesley">Wesley</option>
+          <option value="Ingrid">Ingrid</option>
+          <option value="Natasché">Natasché</option>
+        </select>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <nav class="tabs" id="tabs"></nav>
+      <main id="app"></main>
+    </div>
+
+    <template id="card-template">
+      <article class="job-card">
+        <div class="job-no"></div>
+        <div class="job-customer"></div>
+        <div class="job-product"></div>
+        <div class="job-meta">
+          <span class="due"></span>
+          <span class="badge"></span>
+        </div>
+      </article>
+    </template>
+
+    <script src="./app.js?v=21"></script>
+  </body>
+  </html>

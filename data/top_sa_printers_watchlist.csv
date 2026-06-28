@@ -1,0 +1,9 @@
+brand,model_name,model_code,priority
+HP,HP LaserJet Pro MFP M428fdw,M428FDW,high
+HP,HP Smart Tank 515,515,high
+Canon,Canon PIXMA TS3150,TS3150,high
+Canon,Canon PIXMA G3470,G3470,high
+Epson,Epson EcoTank L3250,L3250,high
+Epson,Epson EcoTank L4260,L4260,high
+Brother,Brother DCP-T420W,T420W,medium
+Brother,Brother HL-L2350DW,L2350DW,medium

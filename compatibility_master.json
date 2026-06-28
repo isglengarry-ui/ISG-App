@@ -1,0 +1,110 @@
+[
+  {
+    "printerModel": "Canon PIXMA MG2541",
+    "aliases": ["canon mg2541", "pixma mg2541", "mg2541", "mg2541s", "canon mg2541s"],
+    "cartridges": ["PG-445", "CL-446", "PG-445XL", "CL-446XL"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/pg-445-black-fine-cartridge-180-pages-/133145",
+    "verifiedOn": "2026-03-18",
+    "notes": "Mapped in same verified 445 family."
+  },
+  {
+    "printerModel": "Canon PIXMA MG2440",
+    "aliases": ["canon mg2440", "pixma mg2440", "mg2440"],
+    "cartridges": ["PG-445", "CL-446", "PG-445XL", "CL-446XL"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/pg-445-black-fine-cartridge-180-pages-/133145",
+    "verifiedOn": "2026-03-18",
+    "notes": "Consumables listed on product/consumables pages."
+  },
+  {
+    "printerModel": "Canon PIXMA MG2540",
+    "aliases": ["canon mg2540", "pixma mg2540", "mg2540"],
+    "cartridges": ["PG-445", "CL-446", "PG-445XL", "CL-446XL"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/pg-445-black-fine-cartridge-180-pages-/133145",
+    "verifiedOn": "2026-03-18",
+    "notes": "Consumables listed on product/consumables pages."
+  },
+  {
+    "printerModel": "Canon iP2840",
+    "aliases": ["canon ip2840", "ip2840"],
+    "cartridges": ["PG-445", "CL-446", "PG-445XL", "CL-446XL"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/pg-445-black-fine-cartridge-180-pages-/133145",
+    "verifiedOn": "2026-03-18",
+    "notes": "Consumables listed on product/consumables pages."
+  },
+  {
+    "printerModel": "Canon MG2940",
+    "aliases": ["canon mg2940", "mg2940"],
+    "cartridges": ["PG-445", "CL-446", "PG-445XL", "CL-446XL"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/pg-445-black-fine-cartridge-180-pages-/133145",
+    "verifiedOn": "2026-03-18",
+    "notes": "Consumables listed on product/consumables pages."
+  },
+  {
+    "printerModel": "Canon PIXMA TS3140",
+    "aliases": ["canon ts3140", "pixma ts3140", "ts3140"],
+    "cartridges": ["PG-445", "CL-446", "PG-445XL", "CL-446XL"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/consumables/canon-printer-ink-toner-cartridges/canon-multifunction-printer-consumables/canon-pixma-ts3140-multifunction-printer-ink-cartridges/35113",
+    "verifiedOn": "2026-03-18",
+    "notes": "Dedicated consumables page."
+  },
+  {
+    "printerModel": "HP DeskJet 2320",
+    "aliases": ["hp deskjet 2320", "deskjet 2320", "2320"],
+    "cartridges": ["HP 305 Black", "HP 305 Tri-color", "HP 305XL Black", "HP 305XL Tri-color"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/hp-deskjet-2320/150517",
+    "verifiedOn": "2026-03-18",
+    "notes": "In-box and replacement family mapping."
+  },
+  {
+    "printerModel": "HP DeskJet Plus 4120",
+    "aliases": ["hp deskjet plus 4120", "deskjet 4120", "4120"],
+    "cartridges": ["HP 305 Black", "HP 305 Tri-color", "HP 305XL Black", "HP 305XL Tri-color"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/hp-deskjet-plus-4120-all-in-one-printer/149172",
+    "verifiedOn": "2026-03-18",
+    "notes": "In-box and replacement family mapping."
+  },
+  {
+    "printerModel": "Canon i-SENSYS MF237w",
+    "aliases": ["canon i-sensys mf237w", "mf237w"],
+    "cartridges": ["Canon Cartridge 737"],
+    "drum": [],
+    "waste": [],
+    "maintenance": [],
+    "sourceName": "Printerland",
+    "sourceUrl": "https://www.printerland.co.za/product/canon-i-sensys-mf237w/138988",
+    "verifiedOn": "2026-03-12",
+    "notes": "Primary consumable listing."
+  }
+]

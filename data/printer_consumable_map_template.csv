@@ -1,0 +1,5 @@
+source_name,source_url,brand,model_name,model_code,consumable_code,consumable_family,consumable_type,color,confidence,notes
+HP Support,https://support.hp.com/,HP,HP LaserJet Pro MFP M428fdw,M428FDW,CF259A,59A,Toner,Black,official,
+HP Support,https://support.hp.com/,HP,HP LaserJet Pro MFP M428fdw,M428FDW,CF259X,59X,Toner,Black,official,high-yield
+Canon Support,https://www.canon.co.za/support/,Canon,Canon PIXMA TS3150,TS3150,PG-445,PG-445,Ink Cartridge,Black,official,
+Canon Support,https://www.canon.co.za/support/,Canon,Canon PIXMA TS3150,TS3150,CL-446,CL-446,Ink Cartridge,Tri-Colour,official,
