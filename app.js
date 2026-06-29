@@ -3056,22 +3056,16 @@ function calculateStandardPrintingQuote_(size, sides, colour, qty, lamination, b
   if (!validSizes.includes(size)) return null;
 
   const cs = costSettings || {};
-  const isA3Like = size === "A3" || size === "SRA3";
-  const isBw     = colour === "Black & White";
-  const numSides  = sides === "Double Sided" ? 2 : 1;
+  const isBw = colour === "Black & White";
 
-  const clickExVat = isA3Like
-    ? (isBw ? Number(cs.clickCostA3BwExVat     ?? 0.29) : Number(cs.clickCostA3ColourExVat  ?? 0.78))
-    : (isBw ? Number(cs.clickCostA4BwExVat     ?? 0.15) : Number(cs.clickCostA4ColourExVat  ?? 0.40));
-  const paperExVat = isA3Like
-    ? Number(cs.paperCostA3ExVat ?? 0.266)
-    : Number(cs.paperCostA4ExVat ?? 0.116);
-  const margin = isBw
-    ? Number(cs.bwMarginPercent     != null ? cs.bwMarginPercent / 100     : 0.27)
-    : Number(cs.colourMarginPercent != null ? cs.colourMarginPercent / 100 : 0.75);
-
-  const costExVat = (clickExVat * numSides) + paperExVat;
-  const pp = Math.round(costExVat / (1 - margin) * 2) / 2; // round to nearest R0.50
+  // Look up per-page rate from price table
+  const sizeKey  = size === "SRA3" ? "A3" : size;
+  const sidesKey = sides === "Double Sided" ? "Double Sided" : "Single Sided";
+  const colrKey  = isBw ? "Black & White" : "Colour";
+  const tiers = (STANDARD_PRINTING_PRICING_[sizeKey] || {})[sidesKey]?.[colrKey] || [];
+  const tier = tiers.find(t => qty <= t.maxQty) || tiers[tiers.length - 1];
+  if (!tier) return null;
+  const pp = tier.pp;
   const printingTotal = Math.round(pp * qty * 100) / 100;
   const oppCostPerM  = Number(cs.oppLamCostPerMExVat  != null ? cs.oppLamCostPerMExVat  : LAM_COSTS_.opp.costPerM);
   const oppMargin    = Number(cs.oppLamMarginPercent   != null ? cs.oppLamMarginPercent / 100 : LAM_COSTS_.opp.margin);
@@ -3146,7 +3140,7 @@ function calculateStandardPrintingQuote_(size, sides, colour, qty, lamination, b
   }
 
   const total = Math.round((printingTotal + laminationTotal + bindingTotal) * 100) / 100;
-  return { pp, costExVat, printingTotal, laminationTotal, laminationSeparate, laminationMinimumApplied, laminationError, lam, bindingTotal, bindingRingSize, bindingPerBooklet, bindingError, bind, total, qty, numBooklets: nb };
+  return { pp, printingTotal, laminationTotal, laminationSeparate, laminationMinimumApplied, laminationError, lam, bindingTotal, bindingRingSize, bindingPerBooklet, bindingError, bind, total, qty, numBooklets: nb };
 }
 
 function calculateVinylStickerQuote_(inputs, settings) {
