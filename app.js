@@ -1122,7 +1122,6 @@ async function savePricingSettings_(nextSettings) {
   try {
     const res = await fetch(API.baseUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "savePricingSettings",
         key: API.key,
@@ -4720,7 +4719,6 @@ function openActionPanel_(actionId) {
       try {
         const res = await fetch(API.baseUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "deleteAction", key: API.key, id: actionId }),
         });
         const result = await res.json();
@@ -5254,7 +5252,6 @@ function renderDeletedJobs() {
       try {
         const res = await fetch(API.baseUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "permanentDeleteJob", key: API.key, fastWrite: true, jobNo }),
         });
         const payload = await res.json();
@@ -5769,7 +5766,6 @@ async function deleteJob_(jobNo) {
   try {
     const res = await fetch(API.baseUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "deleteJob",
         key: API.key,
@@ -6771,7 +6767,6 @@ function showOrderGroupingModal_(newJob, openJobs) {
       try {
         await fetch(API.baseUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "updateJob",
             key: API.key,
@@ -7861,7 +7856,6 @@ async function lookupTrustedConsumables_(query) {
   try {
     const res = await fetch(API.baseUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "lookupConsumables",
         key: API.key,
@@ -10338,7 +10332,6 @@ function renderIntake() {
       }
       const res = await fetch(API.baseUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "createJob",
         key: API.key,
@@ -11725,7 +11718,6 @@ async function uploadArtworkFile_(file, customerName) {
   const base64 = await readFileAsBase64_(file);
   const res = await fetch(API.baseUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action: "uploadArtwork",
       key: API.key,
@@ -12281,7 +12273,6 @@ async function saveJobChanges(jobNo, updates, options = {}) {
   try {
     const res = await fetch(API.baseUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "updateJob",
         key: API.key,
@@ -12373,7 +12364,6 @@ async function bulkSaveJobChanges_(items) {
   try {
     const res = await fetch(API.baseUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "bulkUpdateJobs",
         key: API.key,
