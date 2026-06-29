@@ -3179,6 +3179,26 @@ function calculateVinylStickerQuote_(inputs, settings) {
   };
 }
 
+function calculateVinylMultiQuote_(designs, settings) {
+  const cfg = normalizePricingSettings_(settings || getCurrentPricingSettings_());
+  const valid = (designs || []).filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0);
+  if (!valid.length) return null;
+  const ratePerM2InclVat = Math.max(0, Number(cfg.retailPerM2InclVat || 0));
+  const wastePercent = Math.max(0, Number(cfg.wastePercent || 0));
+  const roundTo = Number(cfg.roundToNearest || 0);
+  const lines = valid.map(d => {
+    const areaM2 = (d.widthMm / 1000) * (d.heightMm / 1000);
+    const lineArea = areaM2 * d.qty * (1 + wastePercent / 100);
+    const lineRetail = lineArea * ratePerM2InclVat;
+    return { widthMm: d.widthMm, heightMm: d.heightMm, qty: d.qty, areaM2, lineArea, lineRetail };
+  });
+  const totalArea = lines.reduce((s, l) => s + l.lineArea, 0);
+  const totalBeforeRounding = totalArea * ratePerM2InclVat;
+  const rounded = roundTo > 0 ? Math.ceil(totalBeforeRounding / roundTo) * roundTo : totalBeforeRounding;
+  const finalTotal = Math.max(250, rounded);
+  return { lines, totalArea, totalBeforeRounding, ratePerM2InclVat, finalTotal, roundTo };
+}
+
 state.role = normalizeRole_(state.role);
 
 const CATEGORY_THEME = {
@@ -9615,9 +9635,11 @@ function renderIntake() {
         </div>
       </div>
       <div id="ji-inhouse-spec-fields"></div>
+      <div id="ji-vinyl-extras" style="display:none;"></div>
       <div id="ji-vinyl-quote" class="ji-vinyl-quote" style="display:none;">
         <div class="spec-question-title">Vinyl Quote Preview (from owner pricing settings)</div>
-        <div class="grid-2">
+        <div id="ji-vinyl-breakdown"></div>
+        <div class="grid-2" id="ji-vinyl-summary-row">
           <div class="kv"><label>Total Retail Price</label><div id="ji-vinyl-total" class="kv-value">-</div></div>
           <div class="kv"><label>Price Per Sticker</label><div id="ji-vinyl-unit" class="kv-value">-</div></div>
         </div>
@@ -9818,39 +9840,106 @@ function renderIntake() {
   const vinylQuoteUnit = panel.querySelector("#ji-vinyl-unit");
   const vinylQuoteMsg = panel.querySelector("#ji-vinyl-msg");
   const vinylApplyBtn = panel.querySelector("#ji-vinyl-apply");
+  const vinylBreakdown = panel.querySelector("#ji-vinyl-breakdown");
+  const vinylSummaryRow = panel.querySelector("#ji-vinyl-summary-row");
+  const vinylExtrasHost = panel.querySelector("#ji-vinyl-extras");
   let latestVinylQuote = null;
+  let vinylExtraDesigns = []; // additional designs beyond design 1
 
   const getVinylSpecInput_ = (fieldId) => panel.querySelector(`#${getSpecFieldId_("inhouse", "Vinyl Stickers", fieldId)}`);
+
+  const renderVinylExtrasWidget_ = () => {
+    if (!vinylExtrasHost) return;
+    const rows = vinylExtraDesigns.map((d, i) => `
+      <div class="vinyl-extra-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <input type="number" class="ved-w" placeholder="W mm" min="1" value="${d.widthMm || ""}" style="width:70px;" />
+        <span style="font-size:12px;color:var(--muted)">×</span>
+        <input type="number" class="ved-h" placeholder="H mm" min="1" value="${d.heightMm || ""}" style="width:70px;" />
+        <span style="font-size:12px;color:var(--muted)">mm</span>
+        <input type="number" class="ved-q" placeholder="Qty" min="1" value="${d.qty || ""}" style="width:65px;" />
+        <button type="button" class="ved-remove secondary" style="padding:2px 8px;font-size:12px;">✕</button>
+      </div>`).join("");
+    vinylExtrasHost.innerHTML = `
+      <div style="margin:8px 0 4px;font-size:13px;font-weight:600;color:var(--label)">Additional Designs</div>
+      <div id="vinyl-extra-rows">${rows}</div>
+      <button type="button" id="vinyl-add-design" style="margin-top:4px;font-size:13px;">+ Add Design</button>
+    `;
+    vinylExtrasHost.querySelectorAll(".ved-remove").forEach(btn => {
+      btn.onclick = () => {
+        const idx = Number(btn.closest(".vinyl-extra-row").dataset.idx);
+        vinylExtraDesigns.splice(idx, 1);
+        renderVinylExtrasWidget_();
+        syncVinylIntakeQuote_();
+      };
+    });
+    vinylExtrasHost.querySelectorAll(".ved-w,.ved-h,.ved-q").forEach(input => {
+      input.addEventListener("input", () => {
+        const row = input.closest(".vinyl-extra-row");
+        const idx = Number(row.dataset.idx);
+        vinylExtraDesigns[idx] = {
+          widthMm:  Number(row.querySelector(".ved-w").value) || 0,
+          heightMm: Number(row.querySelector(".ved-h").value) || 0,
+          qty:      Number(row.querySelector(".ved-q").value) || 0,
+        };
+        syncVinylIntakeQuote_();
+      });
+    });
+    const addBtn = vinylExtrasHost.querySelector("#vinyl-add-design");
+    if (addBtn) addBtn.onclick = () => {
+      vinylExtraDesigns.push({ widthMm: 0, heightMm: 0, qty: 0 });
+      renderVinylExtrasWidget_();
+      syncVinylIntakeQuote_();
+      const newRow = vinylExtrasHost.querySelectorAll(".vinyl-extra-row");
+      if (newRow.length) newRow[newRow.length - 1].querySelector(".ved-w").focus();
+    };
+  };
+
   const syncVinylIntakeQuote_ = () => {
     const isVinyl = typeEl.value === "In-house Printing" && inhouseTypeEl.value === "Vinyl Stickers";
     if (!vinylQuoteWrap) return;
     vinylQuoteWrap.style.display = isVinyl ? "" : "none";
+    if (vinylExtrasHost) vinylExtrasHost.style.display = isVinyl ? "" : "none";
     if (!isVinyl) {
       latestVinylQuote = null;
       if (vinylQuoteTotal) vinylQuoteTotal.textContent = "-";
       if (vinylQuoteUnit) vinylQuoteUnit.textContent = "-";
       if (vinylQuoteMsg) vinylQuoteMsg.textContent = "";
+      if (vinylBreakdown) vinylBreakdown.innerHTML = "";
       return;
     }
-    const width = Number(getVinylSpecInput_("sticker_width_mm") ? getVinylSpecInput_("sticker_width_mm").value : 0);
-    const height = Number(getVinylSpecInput_("sticker_height_mm") ? getVinylSpecInput_("sticker_height_mm").value : 0);
-    const qty = Number(getVinylSpecInput_("quantity") ? getVinylSpecInput_("quantity").value : 0);
-    const quote = calculateVinylStickerQuote_(
-      { widthMm: width, heightMm: height, qty },
-      getCurrentPricingSettings_()
-    );
-    latestVinylQuote = quote;
-    if (!quote) {
-      if (vinylQuoteTotal) vinylQuoteTotal.textContent = "Enter width, height, and quantity";
+    const w1 = Number(getVinylSpecInput_("sticker_width_mm") ? getVinylSpecInput_("sticker_width_mm").value : 0);
+    const h1 = Number(getVinylSpecInput_("sticker_height_mm") ? getVinylSpecInput_("sticker_height_mm").value : 0);
+    const q1 = Number(getVinylSpecInput_("quantity") ? getVinylSpecInput_("quantity").value : 0);
+    const allDesigns = [{ widthMm: w1, heightMm: h1, qty: q1 }, ...vinylExtraDesigns];
+    const validDesigns = allDesigns.filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0);
+    const multiQuote = calculateVinylMultiQuote_(validDesigns, getCurrentPricingSettings_());
+    latestVinylQuote = multiQuote;
+    if (!multiQuote) {
+      if (vinylBreakdown) vinylBreakdown.innerHTML = "";
+      if (vinylSummaryRow) vinylSummaryRow.style.display = "";
+      if (vinylQuoteTotal) vinylQuoteTotal.textContent = "Enter width, height and quantity";
       if (vinylQuoteUnit) vinylQuoteUnit.textContent = "-";
       if (vinylQuoteMsg) vinylQuoteMsg.textContent = "";
       return;
     }
-    if (vinylQuoteTotal) vinylQuoteTotal.textContent = formatCurrencyR_(quote.finalRetail);
-    if (vinylQuoteUnit) vinylQuoteUnit.textContent = formatCurrencyR_(quote.pricePerSticker);
-    if (vinylQuoteMsg) {
-      vinylQuoteMsg.textContent = "";
+    const totalQty = multiQuote.lines.reduce((s, l) => s + l.qty, 0);
+    if (multiQuote.lines.length > 1) {
+      const bRows = multiQuote.lines.map((l, i) =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)">
+          <span>Design ${i + 1}: ${l.widthMm}×${l.heightMm}mm × ${l.qty}</span>
+          <span>${formatCurrencyR_(l.lineRetail)}</span>
+        </div>`).join("");
+      if (vinylBreakdown) vinylBreakdown.innerHTML = `<div style="margin-bottom:8px">${bRows}</div>`;
+      if (vinylSummaryRow) vinylSummaryRow.style.display = "";
+      if (vinylQuoteTotal) vinylQuoteTotal.textContent = formatCurrencyR_(multiQuote.finalTotal);
+      if (vinylQuoteUnit) vinylQuoteUnit.textContent = `${totalQty} stickers total`;
+    } else {
+      if (vinylBreakdown) vinylBreakdown.innerHTML = "";
+      if (vinylSummaryRow) vinylSummaryRow.style.display = "";
+      if (vinylQuoteTotal) vinylQuoteTotal.textContent = formatCurrencyR_(multiQuote.finalTotal);
+      if (vinylQuoteUnit) vinylQuoteUnit.textContent = formatCurrencyR_(multiQuote.finalTotal / totalQty);
     }
+    if (vinylQuoteMsg) vinylQuoteMsg.textContent = "";
   };
   const syncTypeSections = () => {
     const t = typeEl.value;
@@ -9923,6 +10012,12 @@ function renderIntake() {
     const isSub = inhouseTypeEl.value === "Sublimation";
     if (sublimationSection) sublimationSection.style.display = isSub ? "" : "none";
     renderSpecQuestions_(panel, inhouseSpecFieldsHost, "inhouse", isSub ? "" : inhouseTypeEl.value);
+    if (inhouseTypeEl.value === "Vinyl Stickers") {
+      vinylExtraDesigns = [];
+      renderVinylExtrasWidget_();
+    } else if (vinylExtrasHost) {
+      vinylExtrasHost.style.display = "none";
+    }
     syncVinylIntakeQuote_();
     syncSpIntakeQuote_();
     if (inhouseTypeEl.value === "DTF") applyDtfDefaults_();
@@ -9948,7 +10043,7 @@ function renderIntake() {
       }
       const valueEl = panel.querySelector("#ji-value");
       if (valueEl) {
-        valueEl.value = Number(latestVinylQuote.finalRetail).toFixed(2);
+        valueEl.value = Number(latestVinylQuote.finalTotal).toFixed(2);
         state.intakeDraft["ji-value"] = valueEl.value;
       }
       if (vinylQuoteMsg) vinylQuoteMsg.textContent = "Job value updated from quote.";
@@ -10114,6 +10209,7 @@ function renderIntake() {
   renderSpecQuestions_(panel, inhouseSpecFieldsHost, "inhouse", inhouseTypeEl.value);
   renderSpecQuestions_(panel, outsourcedSpecFieldsHost, "outsourced", outsourcedTypeEl.value);
   renderSpecQuestions_(panel, sublimationSpecFieldsHost, "sublimation", sublimationProductEl ? sublimationProductEl.value : "");
+  if (inhouseTypeEl.value === "Vinyl Stickers") renderVinylExtrasWidget_();
   syncTypeSections();
   syncArtworkSourceRules();
   syncVinylIntakeQuote_();
@@ -10163,7 +10259,13 @@ function renderIntake() {
     const inkItem = panel.querySelector("#ji-ink-item").value || "";
     const returnFault = panel.querySelector("#ji-return-fault").value || "";
     const inhouseComposedSpecsRaw = composeSpecsFromQuestions_(panel, "inhouse", inhouseTypeEl.value);
-    const inhouseComposedSpecs = inhouseComposedSpecsRaw;
+    const isVinylMulti = jobType === "In-house Printing" && inhouseTypeEl.value === "Vinyl Stickers" && vinylExtraDesigns.filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0).length > 0;
+    const vinylExtraLines = isVinylMulti
+      ? vinylExtraDesigns.filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0)
+          .map((d, i) => `Design ${i + 2}: ${d.widthMm}×${d.heightMm}mm × ${d.qty}`)
+          .join("\n")
+      : "";
+    const inhouseComposedSpecs = isVinylMulti ? [inhouseComposedSpecsRaw, vinylExtraLines].filter(Boolean).join("\n") : inhouseComposedSpecsRaw;
     const outsourcedComposedSpecs = composeSpecsFromQuestions_(panel, "outsourced", outsourcedTypeEl.value);
     const sublimationProduct = sublimationProductEl ? sublimationProductEl.value : "";
     const isSublimation = jobType === "In-house Printing" && inhouseTypeEl.value === "Sublimation";
@@ -10430,16 +10532,12 @@ function renderVinylPricing() {
     <h3>Vinyl Sticker Pricing</h3>
     <div class="finder-subtitle">Staff uses owner defaults. Owner can run one-off custom quotes without changing defaults.</div>
 
-    <div class="section-title">Quote Inputs</div>
-    <div class="detail-grid">
-      <div class="kv"><label>Width (mm)</label><input id="vp-width" type="number" min="1" placeholder="e.g. 80" /></div>
-      <div class="kv"><label>Height (mm)</label><input id="vp-height" type="number" min="1" placeholder="e.g. 120" /></div>
-      <div class="kv"><label>Quantity</label><input id="vp-qty" type="number" min="1" placeholder="e.g. 100" /></div>
-    </div>
-
-    <div class="actions" style="margin-top:10px">
-      <button id="vp-calc" type="button">Calculate Price</button>
-      <button id="vp-clear" type="button" class="secondary">Clear</button>
+    <div class="section-title">Sticker Designs</div>
+    <div class="finder-subtitle">Add one row per design. Each design can have a different size and quantity.</div>
+    <div id="vp-design-rows" style="margin-top:8px;"></div>
+    <div class="actions" style="margin-top:8px">
+      <button id="vp-add-design" type="button" class="secondary">+ Add Design</button>
+      <button id="vp-clear" type="button" class="secondary">Clear All</button>
     </div>
 
     ${isOwner ? `
@@ -10479,9 +10577,41 @@ function renderVinylPricing() {
   `;
 
   const out = panel.querySelector("#vp-output");
-  const widthEl = panel.querySelector("#vp-width");
-  const heightEl = panel.querySelector("#vp-height");
-  const qtyEl = panel.querySelector("#vp-qty");
+  let vpDesigns = [{ widthMm: 0, heightMm: 0, qty: 0 }];
+
+  const renderVpRows = () => {
+    const host = panel.querySelector("#vp-design-rows");
+    if (!host) return;
+    host.innerHTML = vpDesigns.map((d, i) => `
+      <div class="vinyl-extra-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--muted);min-width:56px">Design ${i + 1}</span>
+        <input type="number" class="vpr-w" placeholder="Width mm" min="1" value="${d.widthMm || ""}" style="width:90px;" />
+        <span style="font-size:12px;color:var(--muted)">×</span>
+        <input type="number" class="vpr-h" placeholder="Height mm" min="1" value="${d.heightMm || ""}" style="width:90px;" />
+        <span style="font-size:12px;color:var(--muted)">mm</span>
+        <input type="number" class="vpr-q" placeholder="Qty" min="1" value="${d.qty || ""}" style="width:75px;" />
+        ${vpDesigns.length > 1 ? `<button type="button" class="vpr-remove secondary" style="padding:2px 8px;font-size:12px;">✕</button>` : ""}
+      </div>`).join("");
+    host.querySelectorAll(".vpr-remove").forEach(btn => {
+      btn.onclick = () => {
+        vpDesigns.splice(Number(btn.closest(".vinyl-extra-row").dataset.idx), 1);
+        renderVpRows();
+        renderQuote();
+      };
+    });
+    host.querySelectorAll(".vpr-w,.vpr-h,.vpr-q").forEach(input => {
+      input.addEventListener("input", () => {
+        const row = input.closest(".vinyl-extra-row");
+        const idx = Number(row.dataset.idx);
+        vpDesigns[idx] = {
+          widthMm:  Number(row.querySelector(".vpr-w").value) || 0,
+          heightMm: Number(row.querySelector(".vpr-h").value) || 0,
+          qty:      Number(row.querySelector(".vpr-q").value) || 0,
+        };
+        renderQuote();
+      });
+    });
+  };
 
   const renderQuote = () => {
     if (isOwner) {
@@ -10495,53 +10625,44 @@ function renderVinylPricing() {
         });
       }
     }
-
     const calcSettings = customQuoteEnabled ? customQuoteSettings : settings;
-    const quote = calculateVinylStickerQuote_({
-      widthMm: widthEl.value,
-      heightMm: heightEl.value,
-      qty: qtyEl.value,
-    }, calcSettings);
+    const valid = vpDesigns.filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0);
+    const quote = calculateVinylMultiQuote_(valid, calcSettings);
     if (!quote) {
       out.innerHTML = `<div class="muted">Enter width, height and quantity to calculate.</div>`;
       return;
     }
-    if (!isOwner) {
-      out.innerHTML = `
-        <h4 style="margin:0 0 8px 0">Quote Result</h4>
-        <div class="detail-grid">
-          <div class="kv"><label>Total Retail Price</label><div><strong>${formatCurrencyR_(quote.finalRetail)}</strong></div></div>
-          <div class="kv"><label>Price Per Sticker</label><div>${formatCurrencyR_(quote.pricePerSticker)}</div></div>
-        </div>
-      `;
-      return;
-    }
-
+    const totalQty = quote.lines.reduce((s, l) => s + l.qty, 0);
+    const lineRows = quote.lines.map((l, i) =>
+      `<tr><td>Design ${i + 1} — ${l.widthMm}×${l.heightMm}mm × ${l.qty}</td><td>${formatCurrencyR_(l.lineRetail)}</td></tr>`
+    ).join("");
+    const ownerDetails = isOwner ? `
+      <tr><td>Total Print Area (incl. waste)</td><td>${quote.totalArea.toFixed(4)} m²</td></tr>
+      <tr><td>Applied Rate (Incl VAT)</td><td>${formatCurrencyR_(quote.ratePerM2InclVat)} / m²</td></tr>
+      <tr><td>Before Rounding</td><td>${formatCurrencyR_(quote.totalBeforeRounding)}</td></tr>
+      <tr><td>Rounding Rule</td><td>${quote.roundTo > 0 ? `Round up to nearest R${quote.roundTo}` : "No rounding"}</td></tr>` : "";
     out.innerHTML = `
       <h4 style="margin:0 0 8px 0">Quote Result</h4>
-      <div class="finder-subtitle" style="margin-bottom:8px">
-        ${customQuoteEnabled ? "Custom quote override active (one-off quote)." : "Using default owner pricing profile."}
-      </div>
-      <table>
-        <tbody>
-          <tr><td>Sticker Area</td><td>${quote.stickerAreaM2.toFixed(4)} m²</td></tr>
-          <tr><td>Base Print Area</td><td>${quote.baseAreaM2.toFixed(4)} m²</td></tr>
-          <tr><td>Total Print Area (incl. waste)</td><td>${quote.totalPrintAreaM2.toFixed(4)} m²</td></tr>
-          <tr><td>Applied Rate (Incl VAT)</td><td>${formatCurrencyR_(quote.ratePerM2InclVat)} / m²</td></tr>
-          <tr><td>Retail Before Rounding</td><td>${formatCurrencyR_(quote.retailBeforeRounding)}</td></tr>
-          <tr><td>Rounding Rule</td><td>${quote.roundTo > 0 ? `Round up to nearest R${quote.roundTo}` : "No rounding"}</td></tr>
-          <tr><td><strong>Final Retail Price</strong></td><td><strong>${formatCurrencyR_(quote.finalRetail)}</strong></td></tr>
-          <tr><td>Price Per Sticker</td><td>${formatCurrencyR_(quote.pricePerSticker)}</td></tr>
-        </tbody>
-      </table>
+      ${isOwner ? `<div class="finder-subtitle" style="margin-bottom:8px">${customQuoteEnabled ? "Custom quote override active." : "Using default owner pricing profile."}</div>` : ""}
+      <table><tbody>
+        ${lineRows}
+        ${ownerDetails}
+        <tr><td><strong>Total (Incl VAT)</strong>${quote.lines.length > 1 ? ` <span style="font-size:11px;color:var(--muted)">(${totalQty} stickers, R250 min applies)</span>` : ""}</td><td><strong>${formatCurrencyR_(quote.finalTotal)}</strong></td></tr>
+        ${quote.lines.length === 1 ? `<tr><td>Price Per Sticker</td><td>${formatCurrencyR_(quote.finalTotal / totalQty)}</td></tr>` : ""}
+      </tbody></table>
     `;
   };
 
-  panel.querySelector("#vp-calc").onclick = renderQuote;
+  panel.querySelector("#vp-add-design").onclick = () => {
+    vpDesigns.push({ widthMm: 0, heightMm: 0, qty: 0 });
+    renderVpRows();
+    renderQuote();
+    const rows = panel.querySelectorAll(".vinyl-extra-row");
+    if (rows.length) rows[rows.length - 1].querySelector(".vpr-w").focus();
+  };
   panel.querySelector("#vp-clear").onclick = () => {
-    widthEl.value = "";
-    heightEl.value = "";
-    qtyEl.value = "";
+    vpDesigns = [{ widthMm: 0, heightMm: 0, qty: 0 }];
+    renderVpRows();
     renderQuote();
   };
   if (isOwner) {
@@ -10559,6 +10680,7 @@ function renderVinylPricing() {
       });
     }
   }
+  renderVpRows();
   renderQuote();
 
   if (isOwner) {
