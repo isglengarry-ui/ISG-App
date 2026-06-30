@@ -3179,24 +3179,37 @@ function calculateVinylStickerQuote_(inputs, settings) {
   };
 }
 
-function calculateVinylMultiQuote_(designs, settings) {
-  const cfg = normalizePricingSettings_(settings || getCurrentPricingSettings_());
+// PrintStation "Multiple Stickers" formula — derived from live quotes 2026-06-30.
+// Price depends only on combined total sticker area across all designs.
+// Tiers: ≤0.625m² @ R460/m², 0.625–0.875m² @ R400/m², >0.875m² @ R336.36/m²
+// Base fee R217.50, minimum R150. Matches PrintStation retail prices.
+const PS_MULTI_STICKER_ = {
+  BASE: 217.50,
+  T1_CEIL: 0.625, T1_RATE: 460,
+  T2_CEIL: 0.875, T2_RATE: 400,
+  T3_RATE: 185 / 0.55,   // ≈ R336.36/m²
+  MINIMUM: 150,
+};
+
+function calculateVinylMultiQuote_(designs) {
   const valid = (designs || []).filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0);
   if (!valid.length) return null;
-  const ratePerM2InclVat = Math.max(0, Number(cfg.retailPerM2InclVat || 0));
-  const wastePercent = Math.max(0, Number(cfg.wastePercent || 0));
-  const roundTo = Number(cfg.roundToNearest || 0);
-  const lines = valid.map(d => {
-    const areaM2 = (d.widthMm / 1000) * (d.heightMm / 1000);
-    const lineArea = areaM2 * d.qty * (1 + wastePercent / 100);
-    const lineRetail = lineArea * ratePerM2InclVat;
-    return { widthMm: d.widthMm, heightMm: d.heightMm, qty: d.qty, areaM2, lineArea, lineRetail };
-  });
-  const totalArea = lines.reduce((s, l) => s + l.lineArea, 0);
-  const totalBeforeRounding = totalArea * ratePerM2InclVat;
-  const rounded = roundTo > 0 ? Math.ceil(totalBeforeRounding / roundTo) * roundTo : totalBeforeRounding;
-  const finalTotal = Math.max(250, rounded);
-  return { lines, totalArea, totalBeforeRounding, ratePerM2InclVat, finalTotal, roundTo };
+  const t = PS_MULTI_STICKER_;
+  const lines = valid.map(d => ({
+    widthMm: d.widthMm, heightMm: d.heightMm, qty: d.qty,
+    areaM2: (d.widthMm / 1000) * (d.heightMm / 1000) * d.qty,
+  }));
+  const totalAreaM2 = lines.reduce((s, l) => s + l.areaM2, 0);
+  let areaPrice;
+  if (totalAreaM2 <= t.T1_CEIL) {
+    areaPrice = totalAreaM2 * t.T1_RATE;
+  } else if (totalAreaM2 <= t.T2_CEIL) {
+    areaPrice = t.T1_CEIL * t.T1_RATE + (totalAreaM2 - t.T1_CEIL) * t.T2_RATE;
+  } else {
+    areaPrice = t.T1_CEIL * t.T1_RATE + (t.T2_CEIL - t.T1_CEIL) * t.T2_RATE + (totalAreaM2 - t.T2_CEIL) * t.T3_RATE;
+  }
+  const finalTotal = Math.max(t.MINIMUM, Math.round(t.BASE + areaPrice));
+  return { lines, totalAreaM2, finalTotal };
 }
 
 state.role = normalizeRole_(state.role);
@@ -9912,7 +9925,7 @@ function renderIntake() {
     const q1 = Number(getVinylSpecInput_("quantity") ? getVinylSpecInput_("quantity").value : 0);
     const allDesigns = [{ widthMm: w1, heightMm: h1, qty: q1 }, ...vinylExtraDesigns];
     const validDesigns = allDesigns.filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0);
-    const multiQuote = calculateVinylMultiQuote_(validDesigns, getCurrentPricingSettings_());
+    const multiQuote = calculateVinylMultiQuote_(validDesigns);
     latestVinylQuote = multiQuote;
     if (!multiQuote) {
       if (vinylBreakdown) vinylBreakdown.innerHTML = "";
@@ -9927,9 +9940,9 @@ function renderIntake() {
       const bRows = multiQuote.lines.map((l, i) =>
         `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)">
           <span>Design ${i + 1}: ${l.widthMm}×${l.heightMm}mm × ${l.qty}</span>
-          <span>${formatCurrencyR_(l.lineRetail)}</span>
+          <span>${l.areaM2.toFixed(4)} m²</span>
         </div>`).join("");
-      if (vinylBreakdown) vinylBreakdown.innerHTML = `<div style="margin-bottom:8px">${bRows}</div>`;
+      if (vinylBreakdown) vinylBreakdown.innerHTML = `<div style="margin-bottom:8px">${bRows}<div style="font-size:11px;color:var(--muted);padding-top:2px">Combined area: ${multiQuote.totalAreaM2.toFixed(4)} m²</div></div>`;
       if (vinylSummaryRow) vinylSummaryRow.style.display = "";
       if (vinylQuoteTotal) vinylQuoteTotal.textContent = formatCurrencyR_(multiQuote.finalTotal);
       if (vinylQuoteUnit) vinylQuoteUnit.textContent = `${totalQty} stickers total`;
@@ -10530,45 +10543,27 @@ function renderVinylPricing() {
 
   panel.innerHTML = `
     <h3>Vinyl Sticker Pricing</h3>
-    <div class="finder-subtitle">Staff uses owner defaults. Owner can run one-off custom quotes without changing defaults.</div>
+    <div class="finder-subtitle">Priced using the PrintStation multiple stickers formula. Add one row per design — each can have a different size and quantity.</div>
 
     <div class="section-title">Sticker Designs</div>
-    <div class="finder-subtitle">Add one row per design. Each design can have a different size and quantity.</div>
     <div id="vp-design-rows" style="margin-top:8px;"></div>
     <div class="actions" style="margin-top:8px">
       <button id="vp-add-design" type="button" class="secondary">+ Add Design</button>
       <button id="vp-clear" type="button" class="secondary">Clear All</button>
     </div>
 
-    ${isOwner ? `
-      <div class="section-title" style="margin-top:14px">Owner Custom Quote (One-Off)</div>
-      <div class="finder-subtitle">Use this for exceptions. It does not change staff defaults.</div>
-      <div class="actions" style="margin-top:8px">
-        <label style="display:flex;align-items:center;gap:8px">
-          <input id="vp-custom-toggle" type="checkbox" />
-          Use custom quote override
-        </label>
-      </div>
-      <div id="vp-custom-panel" style="display:none;margin-top:8px">
-        <div class="detail-grid">
-          <div class="kv"><label>Retail per m² (Incl VAT)</label><input id="vqc-rate" type="number" step="0.01" min="0" value="${escapeHtml(customQuoteSettings.retailPerM2InclVat)}" /></div>
-          <div class="kv"><label>Waste (%)</label><input id="vqc-waste" type="number" step="0.01" min="0" value="${escapeHtml(customQuoteSettings.wastePercent)}" /></div>
-          <div class="kv"><label>Round Up To (R)</label><input id="vqc-round" type="number" step="1" min="0" value="${escapeHtml(customQuoteSettings.roundToNearest)}" /></div>
-        </div>
-      </div>
-    ` : ""}
-
     <div id="vp-output" class="panel" style="margin-top:12px"></div>
 
     ${isOwner ? `
-      <div class="section-title" style="margin-top:14px">Owner Pricing Settings</div>
-      <div class="finder-subtitle">Default profile used by staff for instant quotes.</div>
-      <div class="detail-grid">
-        <div class="kv"><label>Retail per m² (Incl VAT)</label><input id="vs-rate" type="number" step="0.01" min="0" value="${escapeHtml(settings.retailPerM2InclVat)}" /></div>
-        <div class="kv"><label>Round Up To (R)</label><input id="vs-round" type="number" step="1" min="0" value="${escapeHtml(settings.roundToNearest)}" /></div>
-        <div class="kv"><label>Waste (%)</label><input id="vs-waste" type="number" step="0.01" min="0" value="${escapeHtml(settings.wastePercent)}" /></div>
-      </div>
-      <div class="finder-subtitle" style="margin-top:6px">Industry baseline: R490 per m² (Incl VAT).</div>
+      <div class="section-title" style="margin-top:14px">Pricing Formula Reference</div>
+      <div class="finder-subtitle">Based on PrintStation multiple stickers rates (reverse-engineered from live quotes, 2026-06-30).</div>
+      <table style="font-size:12px;margin-top:6px"><tbody>
+        <tr><td>Base fee</td><td>R217.50</td></tr>
+        <tr><td>Up to 0.625 m²</td><td>R460 / m²</td></tr>
+        <tr><td>0.625 – 0.875 m²</td><td>R400 / m²</td></tr>
+        <tr><td>Above 0.875 m²</td><td>R336 / m²</td></tr>
+        <tr><td>Minimum charge</td><td>R150</td></tr>
+      </tbody></table>
       <div class="actions" style="margin-top:10px">
         <button id="vs-save" type="button">Save Pricing Settings</button>
         <span class="save-msg" id="vs-msg">${escapeHtml(state.pricingSaveMessage || "")}</span>
@@ -10625,29 +10620,25 @@ function renderVinylPricing() {
         });
       }
     }
-    const calcSettings = customQuoteEnabled ? customQuoteSettings : settings;
     const valid = vpDesigns.filter(d => d.widthMm > 0 && d.heightMm > 0 && d.qty > 0);
-    const quote = calculateVinylMultiQuote_(valid, calcSettings);
+    const quote = calculateVinylMultiQuote_(valid);
     if (!quote) {
       out.innerHTML = `<div class="muted">Enter width, height and quantity to calculate.</div>`;
       return;
     }
     const totalQty = quote.lines.reduce((s, l) => s + l.qty, 0);
     const lineRows = quote.lines.map((l, i) =>
-      `<tr><td>Design ${i + 1} — ${l.widthMm}×${l.heightMm}mm × ${l.qty}</td><td>${formatCurrencyR_(l.lineRetail)}</td></tr>`
+      `<tr><td>Design ${i + 1} — ${l.widthMm}×${l.heightMm}mm × ${l.qty}</td><td>${l.areaM2.toFixed(4)} m²</td></tr>`
     ).join("");
     const ownerDetails = isOwner ? `
-      <tr><td>Total Print Area (incl. waste)</td><td>${quote.totalArea.toFixed(4)} m²</td></tr>
-      <tr><td>Applied Rate (Incl VAT)</td><td>${formatCurrencyR_(quote.ratePerM2InclVat)} / m²</td></tr>
-      <tr><td>Before Rounding</td><td>${formatCurrencyR_(quote.totalBeforeRounding)}</td></tr>
-      <tr><td>Rounding Rule</td><td>${quote.roundTo > 0 ? `Round up to nearest R${quote.roundTo}` : "No rounding"}</td></tr>` : "";
+      <tr><td>Total Area</td><td>${quote.totalAreaM2.toFixed(4)} m²</td></tr>` : "";
     out.innerHTML = `
       <h4 style="margin:0 0 8px 0">Quote Result</h4>
-      ${isOwner ? `<div class="finder-subtitle" style="margin-bottom:8px">${customQuoteEnabled ? "Custom quote override active." : "Using default owner pricing profile."}</div>` : ""}
+      <div class="finder-subtitle" style="margin-bottom:8px">Priced using PrintStation multiple stickers formula.</div>
       <table><tbody>
         ${lineRows}
         ${ownerDetails}
-        <tr><td><strong>Total (Incl VAT)</strong>${quote.lines.length > 1 ? ` <span style="font-size:11px;color:var(--muted)">(${totalQty} stickers, R250 min applies)</span>` : ""}</td><td><strong>${formatCurrencyR_(quote.finalTotal)}</strong></td></tr>
+        <tr><td><strong>Total (Incl VAT)</strong>${quote.lines.length > 1 ? ` <span style="font-size:11px;color:var(--muted)">(${totalQty} stickers combined)</span>` : ""}</td><td><strong>${formatCurrencyR_(quote.finalTotal)}</strong></td></tr>
         ${quote.lines.length === 1 ? `<tr><td>Price Per Sticker</td><td>${formatCurrencyR_(quote.finalTotal / totalQty)}</td></tr>` : ""}
       </tbody></table>
     `;
@@ -10665,37 +10656,8 @@ function renderVinylPricing() {
     renderVpRows();
     renderQuote();
   };
-  if (isOwner) {
-    const toggle = panel.querySelector("#vp-custom-toggle");
-    const customPanel = panel.querySelector("#vp-custom-panel");
-    if (toggle && customPanel) {
-      toggle.onchange = () => {
-        customPanel.style.display = toggle.checked ? "block" : "none";
-        renderQuote();
-      };
-      customPanel.querySelectorAll("input").forEach((el) => {
-        el.addEventListener("input", () => {
-          if (toggle.checked) renderQuote();
-        });
-      });
-    }
-  }
   renderVpRows();
   renderQuote();
-
-  if (isOwner) {
-    const saveBtn = panel.querySelector("#vs-save");
-    const msg = panel.querySelector("#vs-msg");
-    saveBtn.onclick = async () => {
-      const next = {
-        retailPerM2InclVat: Number(panel.querySelector("#vs-rate").value || 0),
-        roundToNearest: Number(panel.querySelector("#vs-round").value || 0),
-        wastePercent: Number(panel.querySelector("#vs-waste").value || 0),
-      };
-      msg.textContent = "Saving...";
-      await savePricingSettings_(next);
-    };
-  }
 
   // ── Canvas Cost Settings (owner only) ────────────────────────
   if (isOwner) {
