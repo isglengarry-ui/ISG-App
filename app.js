@@ -12347,6 +12347,16 @@ async function saveJobChanges(jobNo, updates, options = {}) {
   const renderDuringSave = !(inlineBatchFeedback && quiet && keepTab);
   state.saving = true;
   if (!quiet) state.saveMessage = "";
+  // Apply updates to local state before the first render so the panel doesn't flash back
+  // to the old value while the network request is in flight (e.g. phone number revert bug).
+  let preSnapshot = null;
+  if (!optimistic) {
+    const preIdx = state.jobs.findIndex(j => j.jobNo === jobNo);
+    if (preIdx >= 0) {
+      preSnapshot = { ...state.jobs[preIdx] };
+      state.jobs[preIdx] = applyLocalJobUpdates_(state.jobs[preIdx], updates);
+    }
+  }
   if (!optimistic && renderDuringSave) render();
   try {
     const res = await fetch(API.baseUrl, {
@@ -12361,10 +12371,6 @@ async function saveJobChanges(jobNo, updates, options = {}) {
     });
     const payload = await res.json();
     if (!payload.ok) throw new Error(payload.error || "Save failed");
-    const idx = state.jobs.findIndex(j => j.jobNo === jobNo);
-    if (idx >= 0) {
-      state.jobs[idx] = applyLocalJobUpdates_(state.jobs[idx], updates);
-    }
     if (!noMerge && payload.data && typeof payload.data === "object") {
       const updatedJob = toLocalJob(payload.data);
       const mergeIdx = state.jobs.findIndex(j => j.jobNo === jobNo);
@@ -12379,6 +12385,12 @@ async function saveJobChanges(jobNo, updates, options = {}) {
         }
         if ("paymentStatus" in updates && (!updatedJob.payment || String(updatedJob.payment).trim() === "")) {
           merged.payment = String(updates.paymentStatus || "");
+        }
+        if ("customerPhone" in updates && (!updatedJob.customerPhone || String(updatedJob.customerPhone).trim() === "")) {
+          merged.customerPhone = String(updates.customerPhone || "");
+        }
+        if ("customerEmail" in updates && (!updatedJob.customerEmail || String(updatedJob.customerEmail).trim() === "")) {
+          merged.customerEmail = String(updates.customerEmail || "");
         }
         // Always keep local paymentMethod / salesReference if server returns blank — the server
         // column is often not updated on status-only saves, which would otherwise wipe the value.
@@ -12416,6 +12428,11 @@ async function saveJobChanges(jobNo, updates, options = {}) {
     scheduleSilentRefresh_(15000);
     return true;
   } catch (err) {
+    // Revert the optimistic local update so the panel reflects the unchanged server state.
+    if (preSnapshot !== null) {
+      const revertIdx = state.jobs.findIndex(j => j.jobNo === jobNo);
+      if (revertIdx >= 0) state.jobs[revertIdx] = preSnapshot;
+    }
     const raw = String(err && err.message ? err.message : err);
     if (raw.toLowerCase().includes("no valid update fields provided")) {
       if (!quiet) state.saveMessage = "No changes to save";
