@@ -3436,7 +3436,7 @@ const SPEC_SCHEMAS = {
       { id: "quantity", label: "Quantity", type: "number" },
       { id: "sides", label: "Sides", type: "select", options: ["Single Sided", "Double Sided"] },
       { id: "paper", label: "Paper / Stock", type: "select", options: ["350gsm Silk", "350gsm Matt", "450gsm", "Other"] },
-      { id: "finish", label: "Finish", type: "select", options: ["None", "Gloss Lamination", "Matt Lamination", "Soft Touch", "Rounded Corners"] },
+      { id: "finish", label: "Finish", type: "select", options: ["None", "Gloss OPP", "Matte OPP"] },
     ],
     "Flyers": [
       { id: "size", label: "Size", type: "select", options: ["A6", "A5", "A4", "A3", "DL", "Custom"] },
@@ -3511,7 +3511,7 @@ const SPEC_SCHEMAS = {
       { id: "quantity", label: "Quantity", type: "number" },
       { id: "sides", label: "Sides", type: "select", options: ["Single Sided", "Double Sided"] },
       { id: "paper", label: "Paper / Stock", type: "select", options: ["350gsm Silk", "350gsm Matt", "450gsm", "Other"] },
-      { id: "finish", label: "Finish", type: "select", options: ["None", "Gloss Lamination", "Matt Lamination", "Soft Touch"] },
+      { id: "finish", label: "Finish", type: "select", options: ["None", "Gloss OPP", "Matte OPP"] },
     ],
     "Flyers (Bulk/Outsourced)": [
       { id: "size", label: "Flyer Size", type: "select", options: ["A6", "A5", "A4", "DL", "Custom"] },
