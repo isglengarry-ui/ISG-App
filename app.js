@@ -115,7 +115,7 @@ const DEFAULT_PRICE_CATALOG = {
         { key: "size", label: "Size", type: "select", options: ["90 x 50 mm", "85 x 55 mm"] },
         { key: "sides", label: "Sides", type: "select", options: ["Single Sided", "Double Sided"] },
         { key: "paper", label: "Paper", type: "select", options: ["350gsm Matt", "350gsm Gloss"] },
-        { key: "finish", label: "Finish", type: "select", options: ["None", "Lamination"] },
+        { key: "finish", label: "Finish", type: "select", options: ["None", "Gloss OPP", "Matte OPP"] },
         { key: "turnaround", label: "Turnaround", type: "select", options: ["Standard", "Express"] },
       ],
       pricing: {
@@ -132,7 +132,7 @@ const DEFAULT_PRICE_CATALOG = {
           size: { "90 x 50 mm": 1, "85 x 55 mm": 1.06 },
           sides: { "Single Sided": 1, "Double Sided": 1.34 },
           paper: { "350gsm Matt": 1, "350gsm Gloss": 1.05 },
-          finish: { "None": 1, "Lamination": 1.22 },
+          finish: { "None": 1, "Gloss OPP": 1.22, "Matte OPP": 1.22 },
           turnaround: { "Standard": 1, "Express": 1.22 },
         },
         roundToNearest: 5,
