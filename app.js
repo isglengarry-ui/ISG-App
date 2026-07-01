@@ -5701,7 +5701,8 @@ function renderJobDetail() {
       "Collected",
       "Closed",
     ]);
-    if (isProdCategory && !finalArtworkLink && !artworkMissingAllowedStatuses.has(finalStatus)) {
+    const statusIsChanging = finalStatus !== String(job.status || "");
+    if (isProdCategory && !finalArtworkLink && !artworkMissingAllowedStatuses.has(finalStatus) && statusIsChanging) {
       window.alert("Artwork file/link is required before setting this status.");
       return;
     }
