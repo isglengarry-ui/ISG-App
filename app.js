@@ -5541,11 +5541,7 @@ function renderJobDetail() {
     <div class="detail-section">
       <h4 class="detail-section-title">Notes & Specs</h4>
       <div class="kv"><label>Notes</label><textarea id="jd-notes" rows="3">${escapeHtml(stripInternalNoteLines_(job.notes))}</textarea></div>
-      <div class="kv"><label>Specs</label><div class="detail-specs-block">${
-        String(job.specs || "").trim()
-          ? String(job.specs).split("\n").filter(Boolean).map(l => `<div class="panel-spec-row">${escapeHtml(l)}</div>`).join("")
-          : `<div class="panel-spec-row" style="color:var(--muted)">No specs recorded</div>`
-      }</div></div>
+      <div class="kv"><label>Specs</label><div id="jd-specs-container">${renderSpecEditFields_(job)}</div></div>
     </div>
     <div class="actions">
       <span id="jd-quick"></span>
@@ -5556,6 +5552,24 @@ function renderJobDetail() {
     </div>
   `;
   renderJobDetailQuickActions_(panel, job);
+
+  // Spec fields: handle showWhen conditional visibility.
+  const jdSpecsContainer = panel.querySelector("#jd-specs-container");
+  if (jdSpecsContainer) {
+    const specShowWhenRows = jdSpecsContainer.querySelectorAll("[data-show-when-field]");
+    if (specShowWhenRows.length) {
+      const updateSpecVisibility = () => {
+        specShowWhenRows.forEach(row => {
+          const controlId = row.dataset.showWhenField;
+          const equals = row.dataset.showWhenEquals;
+          const controlEl = jdSpecsContainer.querySelector(`#${controlId}`);
+          row.style.display = controlEl && controlEl.value === equals ? "" : "none";
+        });
+      };
+      updateSpecVisibility();
+      jdSpecsContainer.querySelectorAll("select, input").forEach(el => el.addEventListener("change", updateSpecVisibility));
+    }
+  }
 
   // Comms log: manual entry in full detail view.
   const jdCommsLogBtn = panel.querySelector(".comms-log-btn");
@@ -5768,6 +5782,28 @@ function renderJobDetail() {
       if (paymentMethodEl && paymentMethodEl.value) {
         updates.paymentMethod = paymentMethodEl.value;
         updates["Payment Method"] = paymentMethodEl.value;
+      }
+    }
+    // Serialize spec fields
+    const specSchema = getEditableSpecSchema_(job);
+    if (specSchema) {
+      const specLines = [];
+      specSchema.fields.forEach(field => {
+        if (field.showWhen) {
+          const controlEl = panel.querySelector(`#jd-spec-${field.showWhen.field}`);
+          if (!controlEl || controlEl.value !== field.showWhen.equals) return;
+        }
+        const el = panel.querySelector(`#jd-spec-${field.id}`);
+        const value = el ? el.value.trim() : "";
+        if (value) specLines.push(`${field.label}: ${value}`);
+      });
+      updates.specs = specLines.join("\n");
+      updates["Specs (All Products)"] = updates.specs;
+    } else {
+      const specsTextEl = panel.querySelector("#jd-specs-text");
+      if (specsTextEl) {
+        updates.specs = specsTextEl.value;
+        updates["Specs (All Products)"] = specsTextEl.value;
       }
     }
     if (finalStatus2 === "Collected" && needsPaymentGate_(job)) {
@@ -9245,6 +9281,58 @@ function isVinylStickerJob_(job) {
   return product.includes("vinyl stickers") || rawInhouse.includes("vinyl stickers");
 }
 
+function parseSpecsToMap_(specsText) {
+  const map = {};
+  String(specsText || "").split(/\r?\n/).forEach(line => {
+    const idx = line.indexOf(": ");
+    if (idx > 0) {
+      const label = line.slice(0, idx).trim();
+      const value = line.slice(idx + 2).trim();
+      if (label) map[label] = value;
+    }
+  });
+  return map;
+}
+
+function getEditableSpecSchema_(job) {
+  const cat = String(job.category || "");
+  const product = String(job.product || "");
+  if (cat === "In-house") {
+    const inhouse = (SPEC_SCHEMAS.inhouse || {})[product];
+    if (inhouse) return { fields: inhouse, mode: "inhouse", productType: product };
+    const sub = (SPEC_SCHEMAS.sublimation || {})[product];
+    if (sub) return { fields: sub, mode: "sublimation", productType: product };
+  }
+  if (cat === "Outsourced") {
+    const outsourced = (SPEC_SCHEMAS.outsourced || {})[product];
+    if (outsourced) return { fields: outsourced, mode: "outsourced", productType: product };
+  }
+  return null;
+}
+
+function renderSpecEditFields_(job) {
+  const schema = getEditableSpecSchema_(job);
+  const parsedSpecs = parseSpecsToMap_(job.specs);
+  if (!schema) {
+    return `<textarea id="jd-specs-text" rows="4" style="width:100%;resize:vertical;">${escapeHtml(job.specs || "")}</textarea>`;
+  }
+  return schema.fields.map(field => {
+    const id = `jd-spec-${field.id}`;
+    const currentValue = parsedSpecs[field.label] || "";
+    const showWhenAttrs = field.showWhen
+      ? `data-show-when-field="jd-spec-${field.showWhen.field}" data-show-when-equals="${escapeHtml(String(field.showWhen.equals || ""))}"`
+      : "";
+    if (field.type === "select") {
+      const opts = field.options.map(o => `<option value="${escapeHtml(o)}"${o === currentValue ? " selected" : ""}>${escapeHtml(o)}</option>`).join("");
+      return `<div class="kv spec-edit-row" ${showWhenAttrs}><label>${escapeHtml(field.label)}</label><select id="${id}"><option value="">— select —</option>${opts}</select></div>`;
+    }
+    if (field.type === "number") {
+      return `<div class="kv spec-edit-row" ${showWhenAttrs}><label>${escapeHtml(field.label)}</label><input id="${id}" type="number" min="${field.min || 1}" placeholder="${escapeHtml(field.placeholder || "")}" value="${escapeHtml(currentValue)}" /></div>`;
+    }
+    return `<div class="kv spec-edit-row" ${showWhenAttrs}><label>${escapeHtml(field.label)}</label><input id="${id}" type="text" placeholder="${escapeHtml(field.placeholder || "")}" value="${escapeHtml(currentValue)}" /></div>`;
+  }).join("");
+}
+
 function getSpecValueFromText_(specs, label) {
   const target = String(label || "").trim().toLowerCase();
   if (!target) return "";
@@ -12322,6 +12410,7 @@ function applyLocalJobUpdates_(job, updates) {
   if ("customerPhone" in updates) next.customerPhone = String(updates.customerPhone || "");
   if ("customerEmail" in updates) next.customerEmail = String(updates.customerEmail || "");
   if ("orderGroup" in updates) next.orderGroup = String(updates.orderGroup || "");
+  if ("specs" in updates) next.specs = String(updates.specs || "");
   if ("Hike Quote / Sale Reference" in updates) next.salesReference = String(updates["Hike Quote / Sale Reference"] || "");
   if ("Return Sales Reference No." in updates && !next.salesReference) next.salesReference = String(updates["Return Sales Reference No."] || "");
   if ("commLog" in updates) {
