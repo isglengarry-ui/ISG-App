@@ -5498,7 +5498,7 @@ function renderJobDetail() {
   }
   const missingSpecs = getIncompleteSpecFields_(job);
   if (missingSpecs.length) {
-    alertPills.push(`<span class="detail-pill incomplete-specs">SPECS INCOMPLETE — fill in: ${escapeHtml(missingSpecs.join(", "))}</span>`);
+    alertPills.push(`<span class="detail-pill incomplete-specs">SPECS INCOMPLETE</span>`);
   }
   panel.innerHTML = `
     <h3>${job.jobNo}</h3>
@@ -5622,10 +5622,7 @@ function renderJobDetail() {
   if (missingSpecs.length) {
     const specsBanner = document.createElement("div");
     specsBanner.className = "specs-incomplete-banner";
-    specsBanner.innerHTML = `
-      <strong>Specs need completing</strong> — This job is missing: <em>${escapeHtml(missingSpecs.join(", "))}</em>.
-      Please fill in the fields below so it queues and produces correctly.
-    `;
+    specsBanner.innerHTML = `<strong>Specs incomplete</strong> — Please fill in the missing fields below before this job goes to production.`;
     const specsSection = panel.querySelector("#jd-specs-container");
     if (specsSection) specsSection.closest(".detail-section").insertAdjacentElement("beforebegin", specsBanner);
   }
