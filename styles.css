@@ -638,7 +638,7 @@ input::placeholder, textarea::placeholder {
 .badge.poc-hold      { background: #d4f1ec; color: #0d6b62; }
 .badge.order-group   { background: #e0f2fe; color: #0369a1; }
 .badge.saving          { background: #e8e8f0; color: #555; animation: pulse-saving 1s ease-in-out infinite; }
-.badge.incomplete-specs { background: #fff3cd; color: #7c4a00; border: 1px solid #f5c842; }
+.badge.incomplete-specs { background: #fff3cd; color: #7c4a00; }
 
 @keyframes pulse-saving {
   0%, 100% { opacity: 1; }
