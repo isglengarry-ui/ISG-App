@@ -3730,6 +3730,7 @@ function renderTabs() {
   }
   const completedCount = state.jobs.filter(j => ["Collected", "Closed", "Completed"].includes(j.status) && !isSoftDeleted_(j)).length;
   const toOrderCount = state.jobs.filter(j => !isSoftDeleted_(j) && j.status === "Ready to Order" && ["Outsourced", "Ink/Stock"].includes(j.category)).length;
+  const mimakiCount = state.jobs.filter(j => !isSoftDeleted_(j) && j.category === "In-house" && isMimakiJob_(j) && ["Ready", "Batched (Vinyl Print Run)", "In Production"].includes(String(j.status || ""))).length;
   tabs.forEach(([id, label]) => {
     const b = document.createElement("button");
     b.className = state.tab === id ? "active" : "";
@@ -3747,6 +3748,12 @@ function renderTabs() {
       const badge = document.createElement("span");
       badge.className = "tab-badge tab-badge-urgent";
       badge.textContent = toOrderCount;
+      b.appendChild(badge);
+    }
+    if (id === "vinyl_queue" && mimakiCount > 0) {
+      const badge = document.createElement("span");
+      badge.className = "tab-badge tab-badge-urgent";
+      badge.textContent = mimakiCount;
       b.appendChild(badge);
     }
     el.appendChild(b);
@@ -9584,7 +9591,7 @@ function renderVinylQueue() {
     .filter(j => !isSoftDeleted_(j))
     .filter(j => j.category === "In-house")
     .filter(j => isMimakiJob_(j))
-    .filter(j => ["Ready", "Batched (Vinyl Print Run)", "In Production", "Ready for Collection"].includes(String(j.status || "")))
+    .filter(j => ["Ready", "Batched (Vinyl Print Run)", "In Production"].includes(String(j.status || "")))
     .sort((a, b) => String(a.due || "").localeCompare(String(b.due || "")));
 
   const toolbar = document.createElement("div");
