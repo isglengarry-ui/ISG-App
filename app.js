@@ -961,7 +961,7 @@ const tabsByRole = {
     ["job_detail", "Job Detail"],
     ["price_list", "Price List"],
     ["vinyl_pricing", "Vinyl Pricing"],
-    ["vinyl_queue", "Vinyl Queue"],
+    ["vinyl_queue", "Mimaki Queue"],
     ["batching", "Supplier Orders"],
     ["alerts", "Alerts"],
     ["completed_jobs", "Completed Jobs"],
@@ -972,7 +972,7 @@ const tabsByRole = {
     ["job_detail", "Job Detail"],
     ["price_list", "Price List"],
     ["vinyl_pricing", "Vinyl Pricing"],
-    ["vinyl_queue", "Vinyl Queue"],
+    ["vinyl_queue", "Mimaki Queue"],
     ["batching", "Supplier Orders"],
     ["owner_reports", "Reports"],
     ["alerts", "Alerts"],
@@ -986,7 +986,7 @@ const tabsByRole = {
     ["job_detail", "Job Detail"],
     ["price_list", "Price List"],
     ["vinyl_pricing", "Vinyl Pricing"],
-    ["vinyl_queue", "Vinyl Queue"],
+    ["vinyl_queue", "Mimaki Queue"],
     ["batching", "Supplier Orders"],
     ["alerts", "Alerts"],
     ["completed_jobs", "Completed Jobs"],
@@ -3498,7 +3498,7 @@ const SPEC_SCHEMAS = {
     "Stickers": [
       { id: "size", label: "Size", type: "text", placeholder: "e.g. 50x50mm" },
       { id: "quantity", label: "Quantity", type: "number" },
-      { id: "material", label: "Material", type: "select", options: ["Vinyl", "Paper", "Clear", "Reflective", "Other"] },
+      { id: "material", label: "Material", type: "select", options: ["Gloss Vinyl", "Matte Vinyl", "Clear Vinyl", "Paper", "Reflective", "Other"] },
       { id: "cut", label: "Cut", type: "select", options: ["Kiss Cut", "Die Cut", "Sheet Cut"] },
       { id: "lam", label: "Lamination", type: "select", options: ["None", "Gloss", "Matt"] },
     ],
@@ -3553,6 +3553,7 @@ const SPEC_SCHEMAS = {
       { id: "size_standard", label: "Standard Size", type: "select", options: ["200×200mm", "300×200mm", "300×300mm", "400×300mm", "400×400mm", "600×400mm", "700×500mm", "800×600mm"], showWhen: { field: "size_type", equals: "Standard Size" } },
       { id: "size_custom", label: "Custom Size (mm)", type: "text", placeholder: "e.g. 450×350mm (max 800×600mm)", showWhen: { field: "size_type", equals: "Custom Size" } },
       { id: "quantity", label: "Quantity (Pairs)", type: "number" },
+      { id: "vinyl_media", label: "Vinyl Media", type: "select", options: ["Gloss Vinyl", "Matte Vinyl"] },
       { id: "artwork_versions", label: "Artwork Versions", type: "select", options: ["1", "2", "3+"] },
     ],
   },
@@ -6164,7 +6165,7 @@ function getStatusOptionsForJob_(job) {
     if (!isDtfJob_(job)) {
       all = all.filter(s => s !== "Batched (DTF Order)" && s !== "DTF Order Placed");
     }
-    if (!isVinylStickerJob_(job)) {
+    if (!isMimakiJob_(job)) {
       all = all.filter(s => s !== "Batched (Vinyl Print Run)");
     }
   }
@@ -6283,7 +6284,7 @@ function buildJobPipeline_(job) {
   const cat = String(job.category || "").trim();
   const isIsgDesign = String(job.artworkSource || "").trim() === "ISG to design";
   const isDtf = isDtfJob_(job);
-  const isVinyl = isVinylStickerJob_(job);
+  const isVinyl = isMimakiJob_(job);
   let pipeline = [];
 
   if (cat === "In-house") {
@@ -9335,6 +9336,67 @@ function isVinylStickerJob_(job) {
   return product.includes("vinyl stickers") || rawInhouse.includes("vinyl stickers");
 }
 
+function isMimakiJob_(job) {
+  const p = String(job.product || job.inhouseType || "").toLowerCase();
+  return ["vinyl stickers", "stickers", "correx boards", "car magnets", "canvas prints"].some(t => p.includes(t));
+}
+
+function getMimakiMediaGroup_(job) {
+  const p = String(job.product || job.inhouseType || "").toLowerCase();
+  if (p.includes("canvas")) return "canvas";
+  const media = [
+    getSpecValueFromText_(job.specs, "Vinyl Media"),
+    getSpecValueFromText_(job.specs, "Media"),
+    getSpecValueFromText_(job.specs, "Material"),
+  ].join(" ").toLowerCase();
+  if (media.includes("gloss")) return "gloss_vinyl";
+  if (media.includes("matte") || media.includes("matt")) return "matte_vinyl";
+  return "other";
+}
+
+function getMimakiProductionMeta_(job) {
+  const p = String(job.product || job.inhouseType || "").toLowerCase();
+  const qty = getSpecValueFromText_(job.specs, "Quantity") ||
+              getSpecValueFromText_(job.specs, "Quantity (Pairs)") || "-";
+
+  if (p.includes("vinyl stickers")) {
+    const w = getSpecValueFromText_(job.specs, "Sticker Width (mm)");
+    const h = getSpecValueFromText_(job.specs, "Sticker Height (mm)");
+    const size = (w && h) ? `${w}×${h}mm` : (w || h || "-");
+    const lam = getSpecValueFromText_(job.specs, "Lamination");
+    const cut = getSpecValueFromText_(job.specs, "Cut Type");
+    return { size, qty, detail: [lam, cut].filter(v => v && v !== "None").join(" · ") || "-" };
+  }
+  if (p.includes("canvas")) {
+    const size = getSpecValueFromText_(job.specs, "Size");
+    const frame = getSpecValueFromText_(job.specs, "Frame / Mount");
+    return { size: size || "-", qty, detail: frame || "-" };
+  }
+  if (p.includes("correx")) {
+    const sizeType = getSpecValueFromText_(job.specs, "Size Type");
+    const size = sizeType === "Standard Sizes"
+      ? getSpecValueFromText_(job.specs, "Standard Size")
+      : getSpecValueFromText_(job.specs, "Custom Size (mm)");
+    const substrate = getSpecValueFromText_(job.specs, "Substrate");
+    return { size: size || "-", qty, detail: substrate || "-" };
+  }
+  if (p.includes("car magnets")) {
+    const sizeType = getSpecValueFromText_(job.specs, "Size Type");
+    const size = sizeType === "Standard Size"
+      ? getSpecValueFromText_(job.specs, "Standard Size")
+      : getSpecValueFromText_(job.specs, "Custom Size (mm)");
+    const qtyPairs = getSpecValueFromText_(job.specs, "Quantity (Pairs)");
+    const artVer = getSpecValueFromText_(job.specs, "Artwork Versions");
+    return { size: size || "-", qty: qtyPairs ? `${qtyPairs} pairs` : "-", detail: artVer ? `${artVer} ver.` : "-" };
+  }
+  if (p.includes("stickers")) {
+    const size = getSpecValueFromText_(job.specs, "Size");
+    const lam = getSpecValueFromText_(job.specs, "Lamination");
+    return { size: size || "-", qty, detail: lam && lam !== "None" ? lam : "-" };
+  }
+  return { size: "-", qty, detail: "-" };
+}
+
 function parseSpecsToMap_(specsText) {
   const map = {};
   String(specsText || "").split(/\r?\n/).forEach(line => {
@@ -9470,36 +9532,16 @@ function renderVinylQueue() {
   const wrap = document.createElement("section");
   wrap.className = "panel vinyl-queue-root";
   wrap.innerHTML = `
-    <h3>Vinyl Production Queue</h3>
-    <div class="finder-subtitle">Low-noise production view for vinyl stickers. Keep all sticker jobs in one run and update status with checkboxes.</div>
+    <h3>Mimaki Production Queue</h3>
+    <div class="finder-subtitle">Jobs grouped by media type. Tick Printed when off the machine, Finished when packed and ready for collection.</div>
   `;
 
   const jobs = state.jobs
     .filter(j => !isSoftDeleted_(j))
     .filter(j => j.category === "In-house")
-    .filter(j => isVinylStickerJob_(j))
+    .filter(j => isMimakiJob_(j))
     .filter(j => ["Ready", "Batched (Vinyl Print Run)", "In Production", "Ready for Collection"].includes(String(j.status || "")))
     .sort((a, b) => String(a.due || "").localeCompare(String(b.due || "")));
-
-  const instructions = document.createElement("div");
-  instructions.style.cssText = "display:flex;gap:10px;margin:10px 0 14px;flex-wrap:wrap;";
-  instructions.innerHTML = `
-    <div style="flex:1;min-width:180px;background:#eef4fb;border:1px solid #c2d8f0;border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
-      <span style="font-size:20px;line-height:1">1</span>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#1a3a50;margin-bottom:2px">Tick "Printed"</div>
-        <div style="font-size:12px;color:#4a6070">When the vinyl job has been printed and is drying / cutting.</div>
-      </div>
-    </div>
-    <div style="flex:1;min-width:180px;background:#edf7f0;border:1px solid #b0ddc0;border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
-      <span style="font-size:20px;line-height:1">2</span>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#1a5030;margin-bottom:2px">Tick "Finished"</div>
-        <div style="font-size:12px;color:#2a6040">When the job is weeded, packed and ready for the customer to collect.</div>
-      </div>
-    </div>
-  `;
-  wrap.appendChild(instructions);
 
   const toolbar = document.createElement("div");
   toolbar.className = "actions";
@@ -9515,7 +9557,7 @@ function renderVinylQueue() {
   queueReadyBtn.onclick = async () => {
     const toQueue = jobs.filter(j => String(j.status || "") === "Ready");
     if (!toQueue.length) {
-      if (msgEl) msgEl.textContent = "No Ready vinyl jobs to queue.";
+      if (msgEl) msgEl.textContent = "No Ready Mimaki jobs to queue.";
       return;
     }
     queueReadyBtn.disabled = true;
@@ -9524,7 +9566,7 @@ function renderVinylQueue() {
       jobNo: job.jobNo,
       updates: { systemStatus: "Batched (Vinyl Print Run)" },
     })));
-    if (msgEl) msgEl.textContent = ok ? `Queued ${toQueue.length} vinyl job(s).` : "Could not queue vinyl jobs. Retry.";
+    if (msgEl) msgEl.textContent = ok ? `Queued ${toQueue.length} job(s).` : "Could not queue jobs. Retry.";
     queueReadyBtn.disabled = false;
     queueReadyBtn.textContent = "Queue All Ready Jobs";
     if (ok) render();
@@ -9536,57 +9578,43 @@ function renderVinylQueue() {
     none.innerHTML = `
       <div style="font-size:40px;margin-bottom:12px">🎉</div>
       <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px">Queue is clear</div>
-      <div style="font-size:13px;max-width:320px;margin:0 auto">No vinyl jobs are currently queued. When sticker jobs reach <strong>Ready</strong> status on the board, click <em>Queue All Ready Jobs</em> to load them here.</div>
+      <div style="font-size:13px;max-width:320px;margin:0 auto">No Mimaki jobs are queued. When jobs reach <strong>Ready</strong> status they will appear here grouped by media.</div>
     `;
     wrap.appendChild(none);
     return wrap;
   }
 
-  const table = document.createElement("table");
-  table.className = "vinyl-queue-table";
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>Job #</th>
-        <th>Customer</th>
-        <th>Qty</th>
-        <th>Size (mm)</th>
-        <th>Material</th>
-        <th>Lamination</th>
-        <th>Artwork</th>
-        <th>Due</th>
-        <th>Printed</th>
-        <th>Finished</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = table.querySelector("tbody");
-
   const vqStatusMap_ = {
-    "Ready":                    { label: "Waiting to Queue", cls: "open" },
-    "Batched (Vinyl Print Run)":{ label: "In Queue",         cls: "progress" },
-    "In Production":            { label: "Printing",         cls: "progress" },
-    "Ready for Collection":     { label: "Ready to Collect", cls: "collection" },
+    "Ready":                     { label: "Waiting to Queue", cls: "open" },
+    "Batched (Vinyl Print Run)": { label: "In Queue",         cls: "progress" },
+    "In Production":             { label: "Printing",         cls: "progress" },
+    "Ready for Collection":      { label: "Ready to Collect", cls: "collection" },
   };
 
-  jobs.forEach(job => {
+  const GROUPS = [
+    { key: "gloss_vinyl", label: "Gloss Vinyl",  accent: "#dbeafe" },
+    { key: "matte_vinyl", label: "Matte Vinyl",  accent: "#f3e8ff" },
+    { key: "canvas",      label: "Canvas",        accent: "#fef3c7" },
+    { key: "other",       label: "Other Media",   accent: "#f3f4f6" },
+  ];
+
+  const buildJobRow = (job, statusMap) => {
     const status = String(job.status || "");
-    const meta = getVinylProductionMeta_(job);
+    const meta = getMimakiProductionMeta_(job);
+    const product = String(job.product || job.inhouseType || "-");
     const printedChecked = ["In Production", "Ready for Collection", "Collected"].includes(status);
     const finishedChecked = ["Ready for Collection", "Collected"].includes(status);
-    const friendlyStatus = vqStatusMap_[status] || { label: status, cls: "open" };
+    const friendlyStatus = statusMap[status] || { label: status, cls: "open" };
 
     const tr = document.createElement("tr");
     if (finishedChecked) tr.classList.add("vq-row-done");
     tr.innerHTML = `
       <td><button class="link-btn vq-open-job" type="button">${escapeHtml(job.jobNo)}</button></td>
       <td>${escapeHtml(job.customer || "-")}</td>
-      <td>${escapeHtml(meta.qty)}</td>
+      <td>${escapeHtml(product)}</td>
       <td>${escapeHtml(meta.size)}</td>
-      <td>${escapeHtml(meta.material)}</td>
-      <td>${escapeHtml(meta.lamination)}</td>
+      <td>${escapeHtml(meta.qty)}</td>
+      <td>${escapeHtml(meta.detail)}</td>
       <td>${String(job.artworkLink || "").trim() ? `<button class="link-btn vq-open-art" type="button">Open Artwork</button>` : `<span class="save-msg">No link</span>`}</td>
       <td>${escapeHtml(job.due || "-")}</td>
       <td><input type="checkbox" class="vq-printed" ${printedChecked ? "checked" : ""} /></td>
@@ -9599,38 +9627,26 @@ function renderVinylQueue() {
       state.tab = "job_detail";
       render();
     };
-
     const artworkBtn = tr.querySelector(".vq-open-art");
     if (artworkBtn) {
       artworkBtn.onclick = () => {
         const link = String(job.artworkLink || "").trim();
-        if (!link) return;
-        window.open(link, "_blank", "noopener,noreferrer");
+        if (link) window.open(link, "_blank", "noopener,noreferrer");
       };
     }
 
     const printedCb = tr.querySelector(".vq-printed");
     const finishedCb = tr.querySelector(".vq-finished");
-
     printedCb.onchange = async () => {
-      if (!printedCb.checked) {
-        printedCb.checked = printedChecked;
-        return;
-      }
-      if (printedChecked) return;
+      if (!printedCb.checked || printedChecked) { printedCb.checked = printedChecked; return; }
       printedCb.disabled = true;
       const ok = await saveJobChanges(job.jobNo, { systemStatus: "In Production" }, { keepTab: true, quiet: true });
       if (!ok) printedCb.checked = false;
       printedCb.disabled = false;
       render();
     };
-
     finishedCb.onchange = async () => {
-      if (!finishedCb.checked) {
-        finishedCb.checked = finishedChecked;
-        return;
-      }
-      if (finishedChecked) return;
+      if (!finishedCb.checked || finishedChecked) { finishedCb.checked = finishedChecked; return; }
       finishedCb.disabled = true;
       const ok = await saveJobChanges(job.jobNo, { systemStatus: "Ready for Collection" }, { keepTab: true, quiet: true });
       if (!ok) { finishedCb.checked = false; finishedCb.disabled = false; return; }
@@ -9640,10 +9656,38 @@ function renderVinylQueue() {
       if (updatedJob) showReadyForCollectionModal_(updatedJob, null);
     };
 
-    tbody.appendChild(tr);
+    return tr;
+  };
+
+  GROUPS.forEach(group => {
+    const groupJobs = jobs.filter(j => getMimakiMediaGroup_(j) === group.key);
+    if (!groupJobs.length) return;
+
+    const section = document.createElement("div");
+    section.style.cssText = "margin-top:20px";
+
+    const heading = document.createElement("div");
+    heading.style.cssText = `background:${group.accent};border-radius:8px 8px 0 0;padding:8px 14px;font-weight:700;font-size:14px;border:1px solid var(--line);border-bottom:none`;
+    heading.textContent = `${group.label} — ${groupJobs.length} job${groupJobs.length !== 1 ? "s" : ""}`;
+    section.appendChild(heading);
+
+    const table = document.createElement("table");
+    table.className = "vinyl-queue-table";
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Job #</th><th>Customer</th><th>Product</th><th>Size</th><th>Qty</th><th>Detail</th>
+          <th>Artwork</th><th>Due</th><th>Printed</th><th>Finished</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tbody = table.querySelector("tbody");
+    groupJobs.forEach(job => tbody.appendChild(buildJobRow(job, vqStatusMap_)));
+    section.appendChild(table);
+    wrap.appendChild(section);
   });
 
-  wrap.appendChild(table);
   return wrap;
 }
 
@@ -12689,10 +12733,10 @@ async function saveJobChanges(jobNo, updates, options = {}) {
     if (!quiet) state.saveMessage = "Saved";
     if (!keepTab) state.tab = "job_detail";
     if (!optimistic && renderDuringSave) render();
-    // Auto-queue vinyl sticker jobs the moment they reach Ready status.
+    // Auto-queue Mimaki jobs the moment they reach Ready status.
     if (updates.systemStatus === "Ready" && !options.skipAutoQueue) {
       const savedJob = state.jobs.find(j => j.jobNo === jobNo);
-      if (savedJob && String(savedJob.category || "") === "In-house" && isVinylStickerJob_(savedJob)) {
+      if (savedJob && String(savedJob.category || "") === "In-house" && isMimakiJob_(savedJob)) {
         setTimeout(() => {
           saveJobChanges(jobNo, { systemStatus: "Batched (Vinyl Print Run)" }, { keepTab: true, quiet: true, skipAutoQueue: true });
         }, 200);
