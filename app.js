@@ -4140,6 +4140,13 @@ function card(job) {
     urgent.textContent = "URGENT REQUEST";
     t.querySelector(".job-card").appendChild(urgent);
   }
+  const missingSpecsCard = getIncompleteSpecFields_(job);
+  if (missingSpecsCard.length) {
+    const specBadge = document.createElement("span");
+    specBadge.className = "badge incomplete-specs";
+    specBadge.textContent = "Incomplete Specs";
+    t.querySelector(".job-meta").appendChild(specBadge);
+  }
   if (state.cleanMode) {
     // Clean mode is already handled — text prefixes removed from all cards.
   }
@@ -5489,6 +5496,10 @@ function renderJobDetail() {
   if (!hasPaymentWarningPill && job.status === "Waiting Payment") {
     alertPills.push(`<span class="detail-pill warn">AWAITING PAYMENT</span>`);
   }
+  const missingSpecs = getIncompleteSpecFields_(job);
+  if (missingSpecs.length) {
+    alertPills.push(`<span class="detail-pill incomplete-specs">SPECS INCOMPLETE — fill in: ${escapeHtml(missingSpecs.join(", "))}</span>`);
+  }
   panel.innerHTML = `
     <h3>${job.jobNo}</h3>
     ${alertPills.length ? `<div class="detail-alerts">${alertPills.join("")}</div>` : ""}
@@ -5607,6 +5618,17 @@ function renderJobDetail() {
     </div>
   `;
   renderJobDetailQuickActions_(panel, job);
+
+  if (missingSpecs.length) {
+    const specsBanner = document.createElement("div");
+    specsBanner.className = "specs-incomplete-banner";
+    specsBanner.innerHTML = `
+      <strong>Specs need completing</strong> — This job is missing: <em>${escapeHtml(missingSpecs.join(", "))}</em>.
+      Please fill in the fields below so it queues and produces correctly.
+    `;
+    const specsSection = panel.querySelector("#jd-specs-container");
+    if (specsSection) specsSection.closest(".detail-section").insertAdjacentElement("beforebegin", specsBanner);
+  }
 
   // Spec fields: handle showWhen conditional visibility.
   const jdSpecsContainer = panel.querySelector("#jd-specs-container");
@@ -9462,6 +9484,31 @@ function getSpecValueFromText_(specs, label) {
     return line.slice(idx + 1).trim();
   }
   return "";
+}
+
+function getIncompleteSpecFields_(job) {
+  const catToMode = { "In-house": "inhouse", "Outsourced": "outsourced", "Sublimation": "sublimation" };
+  const mode = catToMode[String(job.category || "").trim()];
+  if (!mode) return [];
+  let productKey = String(job.product || job.inhouseType || "").trim();
+  if (mode === "sublimation") {
+    const sub = getSpecValueFromText_(job.specs, "Product");
+    if (sub) productKey = sub;
+  }
+  const fields = ((SPEC_SCHEMAS[mode] || {})[productKey] || []);
+  if (!fields.length) return [];
+  const missing = [];
+  fields.forEach(field => {
+    if (field.showWhen) {
+      const depField = fields.find(f => f.id === field.showWhen.field);
+      if (depField) {
+        const depValue = getSpecValueFromText_(job.specs, depField.label);
+        if (depValue !== String(field.showWhen.equals || "")) return;
+      }
+    }
+    if (!getSpecValueFromText_(job.specs, field.label)) missing.push(field.label);
+  });
+  return missing;
 }
 
 function getVinylBatchMeta_(job) {
