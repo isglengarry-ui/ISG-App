@@ -326,6 +326,7 @@ function getCustomPriceListProducts_() {
           { value: "600x400", label: "600 x 400 mm" },
           { value: "700x500", label: "700 x 500 mm" },
           { value: "800x600", label: "800 x 600 mm" },
+          { value: "custom", label: "Custom Size" },
         ] },
         { key: "time", label: "Turnaround", options: [
           { value: "0", label: "5 Business Days" },
@@ -1921,7 +1922,50 @@ function calculateCustomCarMagnetsQuote_(product, answers) {
     "700x500": { 1: 590, 2: 1130, 3: 1640, 4: 2145, 5: 2625, 10: 5005 },
     "800x600": { 1: 790, 2: 1510, 3: 2190, 4: 2865, 5: 3480, 10: 6820 },
   };
-  let base = interpolateTierPrice_(tiers[size] || tiers["300x200"], qty);
+
+  let base;
+  if (size === "custom") {
+    const w = Number(answers && answers.carMagnetWidth || 0);
+    const h = Number(answers && answers.carMagnetHeight || 0);
+    const customArea = w * h;
+    const sizeAreaList = [
+      { key: "200x200", area: 40000 },
+      { key: "300x200", area: 60000 },
+      { key: "300x300", area: 90000 },
+      { key: "400x300", area: 120000 },
+      { key: "400x400", area: 160000 },
+      { key: "600x400", area: 240000 },
+      { key: "700x500", area: 350000 },
+      { key: "800x600", area: 480000 },
+    ];
+    if (!(customArea > 0)) {
+      base = 0;
+    } else if (customArea <= sizeAreaList[0].area) {
+      base = interpolateTierPrice_(tiers[sizeAreaList[0].key], qty);
+    } else if (customArea >= sizeAreaList[sizeAreaList.length - 1].area) {
+      const lo = sizeAreaList[sizeAreaList.length - 2];
+      const hi = sizeAreaList[sizeAreaList.length - 1];
+      const loPrice = interpolateTierPrice_(tiers[lo.key], qty);
+      const hiPrice = interpolateTierPrice_(tiers[hi.key], qty);
+      const t = (customArea - lo.area) / (hi.area - lo.area);
+      base = loPrice + (hiPrice - loPrice) * t;
+    } else {
+      for (let i = 0; i < sizeAreaList.length - 1; i++) {
+        const lo = sizeAreaList[i];
+        const hi = sizeAreaList[i + 1];
+        if (customArea >= lo.area && customArea <= hi.area) {
+          const loPrice = interpolateTierPrice_(tiers[lo.key], qty);
+          const hiPrice = interpolateTierPrice_(tiers[hi.key], qty);
+          const t = (customArea - lo.area) / (hi.area - lo.area);
+          base = loPrice + (hiPrice - loPrice) * t;
+          break;
+        }
+      }
+    }
+  } else {
+    base = interpolateTierPrice_(tiers[size] || tiers["300x200"], qty);
+  }
+
   if (!(base > 0)) base = Number(product && product.basePriceInclVat || 0) * qty;
   if (!(base > 0)) return { base: 0, qty };
 
@@ -3632,6 +3676,9 @@ const SPEC_SCHEMAS = {
       { id: "quantity", label: "Quantity", type: "number" },
     ],
     "Puzzle": [
+      { id: "quantity", label: "Quantity", type: "number" },
+    ],
+    "Mouse Pad": [
       { id: "quantity", label: "Quantity", type: "number" },
     ],
   },
@@ -9719,7 +9766,11 @@ function renderIntake() {
       <h4>In-house Production</h4>
       <div class="grid-2">
         <div class="kv"><label>In-house Product Type</label>
-          <select id="ji-inhouse-type">
+          <div class="ji-product-search-wrap" id="ji-inhouse-search-wrap">
+            <input type="text" class="ji-product-search-input" placeholder="Search or select product…" autocomplete="off">
+            <div class="ji-product-search-results" style="display:none"></div>
+          </div>
+          <select id="ji-inhouse-type" style="display:none">
             <option value=""></option>
             <option>Vinyl Stickers</option>
             <option>Business Cards</option>
@@ -9773,7 +9824,11 @@ function renderIntake() {
       <h4>Outsourced Production</h4>
       <div class="grid-2">
         <div class="kv"><label>Outsourced Product Type</label>
-          <select id="ji-outsourced-type">
+          <div class="ji-product-search-wrap" id="ji-outsourced-search-wrap">
+            <input type="text" class="ji-product-search-input" placeholder="Search or select product…" autocomplete="off">
+            <div class="ji-product-search-results" style="display:none"></div>
+          </div>
+          <select id="ji-outsourced-type" style="display:none">
             <option value=""></option>
             <option>Business Cards (Bulk/Outsourced)</option>
             <option>Flyers (Bulk/Outsourced)</option>
@@ -9881,6 +9936,7 @@ function renderIntake() {
             <option>Can Holder</option>
             <option>Welcome Sign</option>
             <option>Puzzle</option>
+            <option>Mouse Pad</option>
           </select>
         </div>
       </div>
@@ -9896,6 +9952,8 @@ function renderIntake() {
   `;
   hydrateIntakeDraft_(panel);
   bindIntakeDraftInputs_(panel);
+  setupProductTypeSearch_(panel, "#ji-inhouse-search-wrap", "ji-inhouse-type");
+  setupProductTypeSearch_(panel, "#ji-outsourced-search-wrap", "ji-outsourced-type");
 
   // Pre-fill from intakeDraft (set when "Add job to this order" is clicked)
   if (state.intakeDraft.customer)       { const el = panel.querySelector("#ji-customer"); if (el && !el.value) el.value = state.intakeDraft.customer; }
@@ -11418,6 +11476,7 @@ function renderPriceList() {
           const hasCustom = field.options.some((o) => normalizeOptionText_(String(o && o.value || "")).toLowerCase() === "custom");
           const showCustomInput = String(product && product.id || "") === "isg_booklets" && String(field.key || "").toLowerCase() === "qty" && hasCustom;
           const isCanvasSize = String(product && product.id || "") === "isg_canvas_prints" && String(field.key || "") === "size" && hasCustom;
+          const isCarMagnetSize = String(product && product.id || "") === "isg_car_magnets" && String(field.key || "") === "size" && hasCustom;
           return `
             <div class="kv"${swAttr}${field.showWhen ? ' style="display:none"' : ""}>
               <label>${escapeHtml(String(field.label || field.key))}</label>
@@ -11434,6 +11493,12 @@ function renderPriceList() {
                 <div id="pl-canvas-custom-dims" style="display:none;margin-top:8px;display:flex;flex-direction:column;gap:6px">
                   <input id="pl-field-canvas-width" type="number" min="400" max="2500" placeholder="Width (mm) — 400 to 2500" style="width:100%" />
                   <input id="pl-field-canvas-height" type="number" min="400" max="1500" placeholder="Height (mm) — 400 to 1500" style="width:100%" />
+                </div>
+              ` : ""}
+              ${isCarMagnetSize ? `
+                <div id="pl-car-magnet-custom-dims" style="display:none;margin-top:8px;flex-direction:column;gap:6px">
+                  <input id="pl-field-car-magnet-width" type="number" min="100" max="800" placeholder="Width (mm) — max 800" style="width:100%" />
+                  <input id="pl-field-car-magnet-height" type="number" min="100" max="600" placeholder="Height (mm) — max 600" style="width:100%" />
                 </div>
               ` : ""}
             </div>
@@ -11464,6 +11529,24 @@ function renderPriceList() {
           if (!isCustom) {
             const wEl = dimsWrap.querySelector("#pl-field-canvas-width");
             const hEl = dimsWrap.querySelector("#pl-field-canvas-height");
+            if (wEl) wEl.value = "";
+            if (hEl) hEl.value = "";
+          }
+        };
+        sizeSel.addEventListener("change", syncDims);
+        syncDims();
+      }
+    }
+    if (String(product && product.id || "") === "isg_car_magnets") {
+      const sizeSel  = panel.querySelector(`#${getFieldDomId("size")}`);
+      const dimsWrap = panel.querySelector("#pl-car-magnet-custom-dims");
+      if (sizeSel && dimsWrap) {
+        const syncDims = () => {
+          const isCustom = String(sizeSel.value || "").toLowerCase() === "custom";
+          dimsWrap.style.display = isCustom ? "flex" : "none";
+          if (!isCustom) {
+            const wEl = dimsWrap.querySelector("#pl-field-car-magnet-width");
+            const hEl = dimsWrap.querySelector("#pl-field-car-magnet-height");
             if (wEl) wEl.value = "";
             if (hEl) hEl.value = "";
           }
@@ -11518,6 +11601,12 @@ function renderPriceList() {
       ans.width_mm  = String(wEl ? wEl.value : "");
       ans.height_mm = String(hEl ? hEl.value : "");
     }
+    if (String(product && product.id || "") === "isg_car_magnets" && String(ans.size || "").toLowerCase() === "custom") {
+      const wEl = panel.querySelector("#pl-field-car-magnet-width");
+      const hEl = panel.querySelector("#pl-field-car-magnet-height");
+      ans.carMagnetWidth  = String(wEl ? wEl.value : "");
+      ans.carMagnetHeight = String(hEl ? hEl.value : "");
+    }
     return ans;
   };
 
@@ -11568,6 +11657,10 @@ function renderPriceList() {
     if (String(product && product.id || "") === "isg_canvas_prints" && String(answers.size || "").toLowerCase() === "custom") {
       if (!(Number(answers.width_mm) >= 400))  missing.push("Width (mm)");
       if (!(Number(answers.height_mm) >= 400)) missing.push("Height (mm)");
+    }
+    if (String(product && product.id || "") === "isg_car_magnets" && String(answers.size || "").toLowerCase() === "custom") {
+      if (!(Number(answers.carMagnetWidth) > 0))  missing.push("Width (mm)");
+      if (!(Number(answers.carMagnetHeight) > 0)) missing.push("Height (mm)");
     }
     if (missing.length) {
       out.innerHTML = `<div class="muted">Complete all fields: ${escapeHtml(missing.join(", "))}</div>`;
@@ -11809,6 +11902,90 @@ function renderPriceList() {
   renderFlow();
   out.innerHTML = `<div class="muted">Select options and click Calculate Price.</div>`;
   return panel;
+}
+
+function getIntakeAllProducts_() {
+  const seen = new Set();
+  const items = [];
+  const add = (label, value) => {
+    const key = (value || label).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ label, value: value || label });
+  };
+  // Common in-house types first
+  ["Vinyl Stickers", "Business Cards", "Flyers", "Posters", "Plan Prints", "DTF",
+   "Standard Printing", "Photo Prints", "Canvas Prints", "Correx Boards", "Sublimation"].forEach(n => add(n));
+  // Common outsourced types
+  ["Business Cards (Bulk/Outsourced)", "Flyers (Bulk/Outsourced)", "Correx /ABS/ PVC Foam Board",
+   "NCR Books", "Stamps", "Stickers"].forEach(n => add(n));
+  // All pricelist products
+  getCustomPriceListProducts_().forEach(p => { if (p.name) add(p.name); });
+  return items;
+}
+
+function setupProductTypeSearch_(panel, wrapSel, selectId) {
+  const wrap = panel.querySelector(wrapSel);
+  const selectEl = panel.querySelector(`#${selectId}`);
+  if (!wrap || !selectEl) return;
+  const searchEl = wrap.querySelector(".ji-product-search-input");
+  const resultsEl = wrap.querySelector(".ji-product-search-results");
+  if (!searchEl || !resultsEl) return;
+
+  const allProducts = getIntakeAllProducts_();
+
+  const renderResults = (filtered) => {
+    if (!filtered.length) { resultsEl.style.display = "none"; return; }
+    resultsEl.innerHTML = filtered.slice(0, 20).map(p =>
+      `<div class="ji-product-search-item" data-value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</div>`
+    ).join("");
+    resultsEl.style.display = "block";
+  };
+
+  const selectProduct = (value, label) => {
+    searchEl.value = label;
+    let opt = Array.from(selectEl.options).find(o => (o.value || o.text) === value);
+    if (!opt) {
+      opt = document.createElement("option");
+      opt.value = value;
+      opt.text = label;
+      selectEl.add(opt);
+    }
+    selectEl.value = opt.value || opt.text;
+    selectEl.dispatchEvent(new Event("change"));
+    resultsEl.style.display = "none";
+  };
+
+  const syncFromSelect = () => {
+    const val = selectEl.value;
+    if (val && searchEl.value !== val) searchEl.value = val;
+  };
+
+  searchEl.addEventListener("input", () => {
+    const q = searchEl.value.trim().toLowerCase();
+    if (!q) { renderResults(allProducts.slice(0, 12)); return; }
+    renderResults(allProducts.filter(p => p.label.toLowerCase().includes(q)));
+  });
+
+  searchEl.addEventListener("focus", () => {
+    const q = searchEl.value.trim().toLowerCase();
+    if (!q) { renderResults(allProducts.slice(0, 12)); return; }
+    renderResults(allProducts.filter(p => p.label.toLowerCase().includes(q)));
+  });
+
+  resultsEl.addEventListener("mousedown", (e) => {
+    const item = e.target.closest(".ji-product-search-item");
+    if (!item) return;
+    e.preventDefault();
+    selectProduct(item.dataset.value, item.textContent.trim());
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) resultsEl.style.display = "none";
+  }, true);
+
+  selectEl.addEventListener("change", syncFromSelect);
+  syncFromSelect();
 }
 
 function hydrateIntakeDraft_(panel) {

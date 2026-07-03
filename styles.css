@@ -2354,3 +2354,38 @@ th {
   .actions-form-grid  { grid-template-columns: 1fr; }
   .actions-filter-bar { flex-direction: column; }
 }
+
+/* Product type search combobox (job intake) */
+.ji-product-search-wrap { position: relative; }
+.ji-product-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control, 6px);
+  font-size: var(--fs-body, 14px);
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+}
+.ji-product-search-input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+.ji-product-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-sm);
+}
+.ji-product-search-item {
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+}
+.ji-product-search-item:hover { background: var(--primary-soft); color: var(--primary); }
