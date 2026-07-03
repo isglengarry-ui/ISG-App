@@ -3548,6 +3548,13 @@ const SPEC_SCHEMAS = {
       { id: "media", label: "Media", type: "select", options: ["White Gloss Vinyl (Indoor)", "White Gloss Vinyl (Outdoor)", "Matte Vinyl (Indoor)", "Matte Vinyl (Outdoor)"] },
       { id: "sides", label: "Sides", type: "select", options: ["One Side", "Two Sides"] },
     ],
+    "Car Magnets": [
+      { id: "size_type", label: "Size Type", type: "select", options: ["Standard Size", "Custom Size"] },
+      { id: "size_standard", label: "Standard Size", type: "select", options: ["200×200mm", "300×200mm", "300×300mm", "400×300mm", "400×400mm", "600×400mm", "700×500mm", "800×600mm"], showWhen: { field: "size_type", equals: "Standard Size" } },
+      { id: "size_custom", label: "Custom Size (mm)", type: "text", placeholder: "e.g. 450×350mm (max 800×600mm)", showWhen: { field: "size_type", equals: "Custom Size" } },
+      { id: "quantity", label: "Quantity (Pairs)", type: "number" },
+      { id: "sold_as", label: "Sold As", type: "select", options: ["Pairs", "Singles"] },
+    ],
   },
   outsourced: {
     "Business Cards (Bulk/Outsourced)": [
