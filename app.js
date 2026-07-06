@@ -5781,7 +5781,7 @@ function renderJobDetail() {
 
   // Spec fields: handle showWhen conditional visibility.
   const jdSpecsContainer = panel.querySelector("#jd-specs-container");
-  if (jdSpecsContainer) wireSpecVisibility_(jdSpecsContainer);
+  if (jdSpecsContainer) { wireSpecVisibility_(jdSpecsContainer); wireSublimationSubProduct_(jdSpecsContainer, job); }
 
   // Re-render spec fields when category changes so the correct schema is used on save.
   const jdCategoryEl = panel.querySelector("#jd-category");
@@ -5793,6 +5793,7 @@ function renderJobDetail() {
       const fakeJob = Object.assign({}, job, { category: newCat, product: currentProduct, specs: "" });
       jdSpecsContainer.innerHTML = renderSpecEditFields_(fakeJob);
       wireSpecVisibility_(jdSpecsContainer);
+      wireSublimationSubProduct_(jdSpecsContainer, job);
     });
   }
 
@@ -9605,10 +9606,25 @@ function parseSpecsToMap_(specsText) {
   return map;
 }
 
+function buildSublimationEditSchema_(job) {
+  const subProductOptions = Object.keys(SPEC_SCHEMAS.sublimation || {});
+  const currentSubProduct = getSpecValueFromText_(String(job.specs || ""), "Product") || "";
+  const subFields = (SPEC_SCHEMAS.sublimation || {})[currentSubProduct] || [];
+  return {
+    fields: [
+      { id: "sublimation_product", label: "Product", type: "select", options: subProductOptions },
+      ...subFields
+    ],
+    mode: "sublimation",
+    productType: "Sublimation"
+  };
+}
+
 function getEditableSpecSchema_(job) {
   const cat = String(job.category || "");
   const product = String(job.product || "");
   if (cat === "In-house") {
+    if (product === "Sublimation") return buildSublimationEditSchema_(job);
     const inhouse = (SPEC_SCHEMAS.inhouse || {})[product];
     if (inhouse) return { fields: inhouse, mode: "inhouse", productType: product };
     const sub = (SPEC_SCHEMAS.sublimation || {})[product];
@@ -9619,8 +9635,7 @@ function getEditableSpecSchema_(job) {
     if (outsourced) return { fields: outsourced, mode: "outsourced", productType: product };
   }
   if (cat === "Sublimation") {
-    const sub = (SPEC_SCHEMAS.sublimation || {})[product];
-    if (sub) return { fields: sub, mode: "sublimation", productType: product };
+    return buildSublimationEditSchema_(job);
   }
   return null;
 }
@@ -12234,6 +12249,18 @@ function getIntakeAllProducts_() {
   return items;
 }
 
+function wireSublimationSubProduct_(container, job) {
+  const subSel = container.querySelector("#jd-spec-sublimation_product");
+  if (!subSel) return;
+  subSel.addEventListener("change", () => {
+    const newSub = subSel.value;
+    const fakeJob = Object.assign({}, job, { product: "Sublimation", specs: `Product: ${newSub}` });
+    container.innerHTML = renderSpecEditFields_(fakeJob);
+    wireSpecVisibility_(container);
+    wireSublimationSubProduct_(container, job);
+  });
+}
+
 function wireSpecVisibility_(container) {
   const rows = container.querySelectorAll("[data-show-when-field]");
   if (!rows.length) return;
@@ -12268,6 +12295,7 @@ function setupProductDetailSearch_(panel, job) {
     const fakeJob = Object.assign({}, job, { category: effectiveCat, product: newProduct, inhouseType: newProduct, specs: "" });
     specsContainer.innerHTML = renderSpecEditFields_(fakeJob);
     wireSpecVisibility_(specsContainer);
+    wireSublimationSubProduct_(specsContainer, job);
   };
 
   const renderResults = (filtered) => {
