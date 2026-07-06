@@ -9618,6 +9618,10 @@ function getEditableSpecSchema_(job) {
     const outsourced = (SPEC_SCHEMAS.outsourced || {})[product];
     if (outsourced) return { fields: outsourced, mode: "outsourced", productType: product };
   }
+  if (cat === "Sublimation") {
+    const sub = (SPEC_SCHEMAS.sublimation || {})[product];
+    if (sub) return { fields: sub, mode: "sublimation", productType: product };
+  }
   return null;
 }
 
