@@ -12064,9 +12064,11 @@ function setupProductDetailSearch_(panel, job) {
   let committedValue = hiddenEl.value;
 
   const rerenderSpecs = (newProduct) => {
-    const specsContainer = panel.querySelector("#jd-specs-container");
+    const specsContainer = document.getElementById("jd-specs-container");
     if (!specsContainer) return;
-    const fakeJob = Object.assign({}, job, { product: newProduct, inhouseType: newProduct, specs: "" });
+    const categoryEl = document.getElementById("jd-category");
+    const effectiveCat = categoryEl ? categoryEl.value : job.category;
+    const fakeJob = Object.assign({}, job, { category: effectiveCat, product: newProduct, inhouseType: newProduct, specs: "" });
     specsContainer.innerHTML = renderSpecEditFields_(fakeJob);
     wireSpecVisibility_(specsContainer);
   };
