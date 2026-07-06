@@ -5526,7 +5526,13 @@ function renderJobDetail() {
           <div class="kv"><label>Promise Risk</label><div class="kv-value">${job.promiseRisk ? "Yes" : "No"}</div></div>
           ${showBatch ? `<div class="kv"><label>Batch</label><div class="kv-value">${job.batch}</div></div>` : ""}
           <div class="kv"><label>Category</label><select id="jd-category">${["In-house","Outsourced","Sublimation","Design","Ink/Stock","Returns"].map(c => `<option value="${escapeHtml(c)}"${c === job.category ? " selected" : ""}>${escapeHtml(c)}</option>`).join("")}</select></div>
-          <div class="kv"><label>Product</label><div class="kv-value">${job.product}</div></div>
+          <div class="kv"><label>Product</label>
+            <div class="ji-product-search-wrap" id="jd-product-wrap">
+              <input type="text" class="ji-product-search-input" id="jd-product-search" value="${escapeHtml(job.product)}" autocomplete="off" placeholder="Search or select product…">
+              <div class="ji-product-search-results" style="display:none"></div>
+              <input type="hidden" id="jd-product-value" value="${escapeHtml(job.product)}">
+            </div>
+          </div>
           <div class="kv"><label>Staff</label><select id="jd-staff">
             <option value=""></option>
             ${["Chad","Toufiecka","Faith","Wesley","Ingrid","Natasché"].map(n => `<option${n === job.staff ? " selected" : ""}>${escapeHtml(n)}</option>`).join("")}
@@ -5633,6 +5639,8 @@ function renderJobDetail() {
     const specsSection = panel.querySelector("#jd-specs-container");
     if (specsSection) specsSection.closest(".detail-section").insertAdjacentElement("beforebegin", specsBanner);
   }
+
+  setupProductDetailSearch_(panel);
 
   // Spec fields: handle showWhen conditional visibility.
   const jdSpecsContainer = panel.querySelector("#jd-specs-container");
@@ -5782,7 +5790,19 @@ function renderJobDetail() {
       updates.category = categoryEl.value;
       updates["Category"] = categoryEl.value;
     }
-    if ((categoryEl ? categoryEl.value : job.category) === "Returns") updates["Return Sales Reference No."] = salesRef;
+    const effectiveCategory = categoryEl ? categoryEl.value : job.category;
+    const productValueEl = panel.querySelector("#jd-product-value");
+    const newProduct = productValueEl ? productValueEl.value.trim() : "";
+    if (newProduct && newProduct !== job.product) {
+      updates.product = newProduct;
+      updates.inhouseType = newProduct;
+      if (effectiveCategory === "Outsourced") {
+        updates["Outsourced Product Type"] = newProduct;
+      } else {
+        updates["In-house Product Type"] = newProduct;
+      }
+    }
+    if (effectiveCategory === "Returns") updates["Return Sales Reference No."] = salesRef;
     else updates["Hike Quote / Sale Reference"] = salesRef;
     if (paymentSelectEl && paymentSelectEl.value === "Paid" && !salesRef) {
       window.alert("Sales Reference is required when Payment Status is Paid.");
@@ -12031,6 +12051,55 @@ function getIntakeAllProducts_() {
   return items;
 }
 
+function setupProductDetailSearch_(panel) {
+  const wrap = panel.querySelector("#jd-product-wrap");
+  if (!wrap) return;
+  const searchEl = wrap.querySelector("#jd-product-search");
+  const resultsEl = wrap.querySelector(".ji-product-search-results");
+  const hiddenEl = wrap.querySelector("#jd-product-value");
+  if (!searchEl || !resultsEl || !hiddenEl) return;
+
+  const allProducts = getIntakeAllProducts_();
+
+  const renderResults = (filtered) => {
+    if (!filtered.length) { resultsEl.style.display = "none"; return; }
+    resultsEl.innerHTML = filtered.slice(0, 20).map(p =>
+      `<div class="ji-product-search-item" data-value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</div>`
+    ).join("");
+    resultsEl.style.display = "block";
+  };
+
+  const selectProduct = (value) => {
+    searchEl.value = value;
+    hiddenEl.value = value;
+    resultsEl.style.display = "none";
+  };
+
+  searchEl.addEventListener("input", () => {
+    const q = searchEl.value.trim().toLowerCase();
+    hiddenEl.value = searchEl.value.trim();
+    if (!q) { renderResults(allProducts.slice(0, 12)); return; }
+    renderResults(allProducts.filter(p => p.label.toLowerCase().includes(q)));
+  });
+
+  searchEl.addEventListener("focus", () => {
+    const q = searchEl.value.trim().toLowerCase();
+    if (!q) { renderResults(allProducts.slice(0, 12)); return; }
+    renderResults(allProducts.filter(p => p.label.toLowerCase().includes(q)));
+  });
+
+  resultsEl.addEventListener("mousedown", (e) => {
+    const item = e.target.closest(".ji-product-search-item");
+    if (!item) return;
+    e.preventDefault();
+    selectProduct(item.dataset.value);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) resultsEl.style.display = "none";
+  }, true);
+}
+
 function setupProductTypeSearch_(panel, wrapSel, selectId) {
   const wrap = panel.querySelector(wrapSel);
   const selectEl = panel.querySelector(`#${selectId}`);
@@ -12695,6 +12764,9 @@ function applyLocalJobUpdates_(job, updates) {
   if ("customerEmail" in updates) next.customerEmail = String(updates.customerEmail || "");
   if ("orderGroup" in updates) next.orderGroup = String(updates.orderGroup || "");
   if ("specs" in updates) next.specs = String(updates.specs || "");
+  if ("product" in updates) next.product = String(updates.product || "");
+  if ("inhouseType" in updates) next.inhouseType = String(updates.inhouseType || "");
+  if ("category" in updates) next.category = String(updates.category || "");
   if ("Hike Quote / Sale Reference" in updates) next.salesReference = String(updates["Hike Quote / Sale Reference"] || "");
   if ("Return Sales Reference No." in updates && !next.salesReference) next.salesReference = String(updates["Return Sales Reference No."] || "");
   if ("commLog" in updates) {
