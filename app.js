@@ -50,7 +50,7 @@ const state = {
   priceCostSettings: null,
   lastRefresh: null,
   savingJobNos: new Set(),
-  recentStatusSaves: {},
+  recentSaves: {},
   actions: [],
   actionsLoading: false,
   actionsFilter: { status: "all", category: "all", priority: "all" },
@@ -6709,10 +6709,8 @@ function optimisticPillUpdate_(job, updates, panel) {
   }
   // Fast path: only rebuild the affected lane instead of the entire board.
   const updatedJob = idx >= 0 ? state.jobs[idx] : job;
-  // Track recent status saves so silent refreshes don't overwrite optimistic state.
-  if ("systemStatus" in updates) {
-    state.recentStatusSaves[job.jobNo] = { status: updates.systemStatus, ts: Date.now() };
-  }
+  // Track recent saves so silent refreshes don't overwrite optimistic state.
+  state.recentSaves[job.jobNo] = { updates, ts: Date.now() };
   state.savingJobNos.add(job.jobNo);
   if (!fastLaneUpdate_(updatedJob)) render();
   // Re-render the open panel so its pills reflect the optimistic state immediately.
@@ -6727,7 +6725,7 @@ function optimisticPillUpdate_(job, updates, panel) {
     if (!ok && snapshot && idx >= 0) {
       const revertIdx = state.jobs.findIndex(j => j.jobNo === job.jobNo);
       if (revertIdx >= 0) state.jobs[revertIdx] = snapshot;
-      delete state.recentStatusSaves[job.jobNo];
+      delete state.recentSaves[job.jobNo];
       state.saveMessage = "Save failed — please try again";
       if (!fastLaneUpdate_(snapshot)) render();
       refreshOpenPanel_();
@@ -13022,29 +13020,13 @@ async function saveJobChanges(jobNo, updates, options = {}) {
       const updatedJob = toLocalJob(payload.data);
       const mergeIdx = state.jobs.findIndex(j => j.jobNo === jobNo);
       if (mergeIdx >= 0) {
-        const merged = { ...state.jobs[mergeIdx], ...updatedJob };
-        // Preserve just-edited fields if the backend response came back blank.
-        // Preserve optimistic status if server returned stale data (fastWrite propagation delay).
-        if ("systemStatus" in updates && String(updatedJob.status || "") !== String(updates.systemStatus || "")) {
-          merged.status = String(updates.systemStatus);
-        }
-        if ("communicationStatus" in updates && (!updatedJob.communicationStatus || String(updatedJob.communicationStatus).trim() === "")) {
-          merged.communicationStatus = String(updates.communicationStatus || "");
-        }
-        if ("customerNotified" in updates && (!updatedJob.customerNotified || String(updatedJob.customerNotified).trim() === "")) {
-          merged.customerNotified = String(updates.customerNotified || "");
-        }
-        if ("paymentStatus" in updates && (!updatedJob.payment || String(updatedJob.payment).trim() === "")) {
-          merged.payment = String(updates.paymentStatus || "");
-        }
-        if ("customerPhone" in updates && (!updatedJob.customerPhone || String(updatedJob.customerPhone).trim() === "")) {
-          merged.customerPhone = String(updates.customerPhone || "");
-        }
-        if ("customerEmail" in updates && (!updatedJob.customerEmail || String(updatedJob.customerEmail).trim() === "")) {
-          merged.customerEmail = String(updates.customerEmail || "");
-        }
-        // Always keep local paymentMethod / salesReference if server returns blank — the server
-        // column is often not updated on status-only saves, which would otherwise wipe the value.
+        // Start with server data overlaid on current local state, then re-apply
+        // the user's updates on top. fastWrite returns the row before the sheet
+        // commits, so the server response is often stale — re-applying updates
+        // ensures specs, category, status, notes etc. are never overwritten.
+        const serverMerged = { ...state.jobs[mergeIdx], ...updatedJob };
+        const merged = applyLocalJobUpdates_(serverMerged, updates);
+        // Always keep local paymentMethod / salesReference if server returns blank.
         if (!String(updatedJob.paymentMethod || "").trim() && String(state.jobs[mergeIdx].paymentMethod || "").trim()) {
           merged.paymentMethod = state.jobs[mergeIdx].paymentMethod;
         }
@@ -13055,7 +13037,7 @@ async function saveJobChanges(jobNo, updates, options = {}) {
         if (!String(updatedJob.salesReference || "").trim() && String(state.jobs[mergeIdx].salesReference || "").trim()) {
           merged.salesReference = state.jobs[mergeIdx].salesReference;
         }
-        // Preserve local commLog if the server returned empty (backend column may not be deployed yet).
+        // Preserve local commLog if the server returned empty.
         if ((!updatedJob.commLog || updatedJob.commLog.length === 0) && Array.isArray(state.jobs[mergeIdx].commLog) && state.jobs[mergeIdx].commLog.length > 0) {
           merged.commLog = state.jobs[mergeIdx].commLog;
         }
@@ -13075,11 +13057,14 @@ async function saveJobChanges(jobNo, updates, options = {}) {
         }, 200);
       }
     }
+    // Track this save so the silent refresh won't overwrite fields before backend propagates.
+    if (!noMerge) state.recentSaves[jobNo] = { updates, ts: Date.now() };
     // Delayed silent refresh keeps data fresh without blocking the save UX.
     scheduleSilentRefresh_(15000);
     return true;
   } catch (err) {
     // Revert the optimistic local update so the panel reflects the unchanged server state.
+    delete state.recentSaves[jobNo];
     if (preSnapshot !== null) {
       const revertIdx = state.jobs.findIndex(j => j.jobNo === jobNo);
       if (revertIdx >= 0) state.jobs[revertIdx] = preSnapshot;
@@ -13213,13 +13198,13 @@ async function loadLiveData(options = {}) {
           // Server returned a value — keep it fresh in localStorage
           persistPaymentMethod_(serverJob.jobNo, serverJob.paymentMethod);
         }
-        // Preserve recently saved status change — prevents silent refresh from
-        // overwriting an optimistic status update before the backend propagates.
-        const recentStatus = state.recentStatusSaves[serverJob.jobNo];
-        if (recentStatus && (now - recentStatus.ts) < RECENT_STATUS_WINDOW_MS && serverJob.status !== recentStatus.status) {
-          merged = { ...merged, status: recentStatus.status };
-        } else if (recentStatus && (now - recentStatus.ts) >= RECENT_STATUS_WINDOW_MS) {
-          delete state.recentStatusSaves[serverJob.jobNo];
+        // Preserve recently saved changes — prevents silent refresh from
+        // overwriting fields before the backend propagates the fastWrite.
+        const recentSave = state.recentSaves[serverJob.jobNo];
+        if (recentSave && (now - recentSave.ts) < RECENT_STATUS_WINDOW_MS) {
+          merged = applyLocalJobUpdates_(merged, recentSave.updates);
+        } else if (recentSave && (now - recentSave.ts) >= RECENT_STATUS_WINDOW_MS) {
+          delete state.recentSaves[serverJob.jobNo];
         }
         return merged;
       });
