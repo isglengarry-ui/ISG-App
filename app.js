@@ -12833,6 +12833,39 @@ function persistPaymentMethod_(jobNo, method) {
   savePaymentMethodStore_(store);
 }
 
+const PENDING_SAVES_KEY = "isg_pending_saves_v1";
+const PENDING_SAVES_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function persistPendingSave_(jobNo, updates) {
+  if (!jobNo) return;
+  try {
+    const store = JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || "{}");
+    store[jobNo] = { updates, ts: Date.now() };
+    localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(store));
+  } catch (_e) {}
+}
+
+function clearPendingSave_(jobNo) {
+  if (!jobNo) return;
+  try {
+    const store = JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || "{}");
+    delete store[jobNo];
+    localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(store));
+  } catch (_e) {}
+}
+
+function loadPendingSavesStore_() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || "{}");
+    const now = Date.now();
+    const valid = {};
+    Object.keys(raw).forEach(k => {
+      if (raw[k] && (now - (raw[k].ts || 0)) < PENDING_SAVES_TTL_MS) valid[k] = raw[k];
+    });
+    return valid;
+  } catch (_e) { return {}; }
+}
+
 function addCommLogEntry_(job, type, note) {
   const staff = state.staffName || "?";
   const ts = new Date().toISOString();
@@ -13076,6 +13109,8 @@ async function saveJobChanges(jobNo, updates, options = {}) {
     }
     // Track this save so the silent refresh won't overwrite fields before backend propagates.
     if (!noMerge) state.recentSaves[jobNo] = { updates, ts: Date.now() };
+    // Persist save to localStorage so F5 refresh doesn't lose changes before GAS commits.
+    if (!noMerge) persistPendingSave_(jobNo, updates);
     // Delayed silent refresh keeps data fresh without blocking the save UX.
     scheduleSilentRefresh_(15000);
     return true;
@@ -13178,8 +13213,8 @@ async function loadLiveData(options = {}) {
     render();
   }
   try {
-    const url = `${API.baseUrl}?action=jobs&key=${encodeURIComponent(API.key)}`;
-    const res = await fetch(url, { method: "GET" });
+    const url = `${API.baseUrl}?action=jobs&key=${encodeURIComponent(API.key)}&_t=${Date.now()}`;
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
     const payload = await res.json();
     if (!payload.ok || !Array.isArray(payload.data)) {
       throw new Error(payload.error || "Invalid API response");
@@ -13226,9 +13261,10 @@ async function loadLiveData(options = {}) {
         return merged;
       });
     } else {
-      // On full page load, restore commLog and paymentMethod from localStorage.
+      // On full page load, restore commLog, paymentMethod, and recent saves from localStorage.
       const storedLogs = loadCommLogStore_();
       const storedMethods = loadPaymentMethodStore_();
+      const pendingSaves = loadPendingSavesStore_();
       state.jobs = incoming.map(serverJob => {
         let merged = serverJob;
         if (!serverJob.commLog || serverJob.commLog.length === 0) {
@@ -13241,6 +13277,9 @@ async function loadLiveData(options = {}) {
         } else {
           persistPaymentMethod_(serverJob.jobNo, serverJob.paymentMethod);
         }
+        // Re-apply recent saves so F5 doesn't lose changes before GAS commits to sheet.
+        const pending = pendingSaves[serverJob.jobNo];
+        if (pending) merged = applyLocalJobUpdates_(merged, pending.updates);
         return merged;
       });
     }
