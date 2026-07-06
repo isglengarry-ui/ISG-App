@@ -5783,6 +5783,19 @@ function renderJobDetail() {
   const jdSpecsContainer = panel.querySelector("#jd-specs-container");
   if (jdSpecsContainer) wireSpecVisibility_(jdSpecsContainer);
 
+  // Re-render spec fields when category changes so the correct schema is used on save.
+  const jdCategoryEl = panel.querySelector("#jd-category");
+  if (jdCategoryEl && jdSpecsContainer) {
+    jdCategoryEl.addEventListener("change", () => {
+      const newCat = jdCategoryEl.value;
+      const productValueEl = panel.querySelector("#jd-product-value");
+      const currentProduct = productValueEl ? productValueEl.value.trim() : job.product;
+      const fakeJob = Object.assign({}, job, { category: newCat, product: currentProduct, specs: "" });
+      jdSpecsContainer.innerHTML = renderSpecEditFields_(fakeJob);
+      wireSpecVisibility_(jdSpecsContainer);
+    });
+  }
+
   // Comms log: manual entry in full detail view.
   const jdCommsLogBtn = panel.querySelector(".comms-log-btn");
   if (jdCommsLogBtn) {
