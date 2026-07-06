@@ -3657,8 +3657,8 @@ const SPEC_SCHEMAS = {
     ],
     "Canvas Prints": [
       { id: "size", label: "Size", type: "select", options: ["A5 (148×210mm)", "A4 (210×297mm)", "A3 (297×420mm)", "A2 (420×594mm)", "A1 (594×841mm)", "Custom"] },
-      { id: "width_mm", label: "Width mm (if Custom)", type: "number" },
-      { id: "height_mm", label: "Height mm (if Custom)", type: "number" },
+      { id: "width_mm", label: "Width mm (if Custom)", type: "number", showWhen: { field: "size", equals: "Custom" } },
+      { id: "height_mm", label: "Height mm (if Custom)", type: "number", showWhen: { field: "size", equals: "Custom" } },
       { id: "quantity", label: "Quantity", type: "number" },
       { id: "frame", label: "Frame / Mount", type: "select", options: ["Stretcher Frame", "Float Frame", "No Frame / Print Only"] },
       { id: "edging", label: "Edging Style", type: "select", options: ["Gallery Wrap (image continues)", "Mirror Wrap", "White Border"] },
