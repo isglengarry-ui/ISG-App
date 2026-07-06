@@ -5525,7 +5525,7 @@ function renderJobDetail() {
         <div>
           <div class="kv"><label>Promise Risk</label><div class="kv-value">${job.promiseRisk ? "Yes" : "No"}</div></div>
           ${showBatch ? `<div class="kv"><label>Batch</label><div class="kv-value">${job.batch}</div></div>` : ""}
-          <div class="kv"><label>Category</label><div class="kv-value">${job.category}</div></div>
+          <div class="kv"><label>Category</label><select id="jd-category">${["In-house","Outsourced","Sublimation","Design","Ink/Stock","Returns"].map(c => `<option value="${escapeHtml(c)}"${c === job.category ? " selected" : ""}>${escapeHtml(c)}</option>`).join("")}</select></div>
           <div class="kv"><label>Product</label><div class="kv-value">${job.product}</div></div>
           <div class="kv"><label>Staff</label><select id="jd-staff">
             <option value=""></option>
@@ -5777,7 +5777,12 @@ function renderJobDetail() {
       updates.artworkSource = artworkSourceDetailEl.value;
       updates["Artwork Source"] = artworkSourceDetailEl.value;
     }
-    if (job.category === "Returns") updates["Return Sales Reference No."] = salesRef;
+    const categoryEl = panel.querySelector("#jd-category");
+    if (categoryEl && categoryEl.value !== job.category) {
+      updates.category = categoryEl.value;
+      updates["Category"] = categoryEl.value;
+    }
+    if ((categoryEl ? categoryEl.value : job.category) === "Returns") updates["Return Sales Reference No."] = salesRef;
     else updates["Hike Quote / Sale Reference"] = salesRef;
     if (paymentSelectEl && paymentSelectEl.value === "Paid" && !salesRef) {
       window.alert("Sales Reference is required when Payment Status is Paid.");
