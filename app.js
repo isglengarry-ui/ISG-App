@@ -50,6 +50,7 @@ const state = {
   priceCostSettings: null,
   lastRefresh: null,
   savingJobNos: new Set(),
+  recentStatusSaves: {},
   actions: [],
   actionsLoading: false,
   actionsFilter: { status: "all", category: "all", priority: "all" },
@@ -895,6 +896,52 @@ function getCustomPriceListProducts_() {
         ] },
       ],
       pricingData: { template_type: "isg_custom_colop_stamps", quantities: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], default_turnaround: "0" },
+    },
+    {
+      id: "isg_signboards",
+      slug: "isg-signboards",
+      name: "ABS / Correx / Foam Signboards",
+      basePriceInclVat: 115,
+      templateType: "isg_custom_signboards",
+      flowFields: [
+        { key: "qty", label: "Quantity", options: ["1","2","3","4","5","10"].map(v => ({ value: v, label: v })) },
+        { key: "size", label: "Size", options: [
+          { value: "a6", label: "A6 (105 × 148 mm)" },
+          { value: "a5", label: "A5 (148 × 210 mm)" },
+          { value: "a4", label: "A4 (210 × 297 mm)" },
+          { value: "a3", label: "A3 (297 × 420 mm)" },
+          { value: "a2", label: "A2 (420 × 594 mm)" },
+          { value: "a1", label: "A1 (594 × 841 mm)" },
+          { value: "a0", label: "A0 (841 × 1189 mm)" },
+          { value: "sq200", label: "200 × 200 mm Square" },
+          { value: "sq300", label: "300 × 300 mm Square" },
+          { value: "sq400", label: "400 × 400 mm Square" },
+          { value: "sq500", label: "500 × 500 mm Square" },
+          { value: "sq600", label: "600 × 600 mm Square" },
+          { value: "custom", label: "Custom Size" },
+        ]},
+        { key: "substrate", label: "Board / Substrate", options: [
+          { value: "correx_3mm", label: "Correx 3mm" },
+          { value: "abs_0_9mm", label: "ABS Board 0.9mm" },
+          { value: "abs_1_5mm", label: "ABS Board 1.5mm" },
+          { value: "mfoam_3mm", label: "M-Foam 3mm" },
+          { value: "mfoam_5mm", label: "M-Foam 5mm" },
+        ]},
+        { key: "sides", label: "Sides", options: [
+          { value: "one_side", label: "One Side" },
+          { value: "double_sided", label: "Double Sided" },
+        ]},
+        { key: "media", label: "Vinyl Media", options: [
+          { value: "gloss_indoor", label: "White Gloss Vinyl Indoor" },
+          { value: "gloss_outdoor", label: "White Gloss Vinyl Outdoor" },
+        ]},
+        { key: "time", label: "Turnaround", options: [
+          { value: "0", label: "7 Business Days" },
+          { value: "1", label: "5 Business Days" },
+          { value: "2", label: "3 Business Days" },
+        ]},
+      ],
+      pricingData: { template_type: "isg_custom_signboards", quantities: ["1","2","3","4","5","10"], default_turnaround: "0" },
     },
     {
       id: "isg_canvas_prints",
@@ -2421,6 +2468,94 @@ function calculateCustomColopStampsQuote_(product, answers) {
   return { base: Math.max(0, base * typeFactor * colourFactor * rushFactor), qty, totalQty: qty };
 }
 
+function calculateCustomSignboardsQuote_(product, answers) {
+  const qty = resolveQtyFromAnswers_(answers);
+  const size = String(answers && answers.size || "a4").toLowerCase();
+  const substrate = String(answers && answers.substrate || "abs_0_9mm").toLowerCase();
+  const sides = String(answers && answers.sides || "one_side").toLowerCase();
+  const media = String(answers && answers.media || "gloss_indoor").toLowerCase();
+  const turnaround = String(answers && answers.time || "0");
+
+  // Base prices at qty=1, one side, ABS 0.9mm, White Gloss Vinyl Indoor
+  const base1 = {
+    a6: 115, a5: 120, a4: 140, a3: 170, a2: 230, a1: 350, a0: 585,
+    sq200: 125, sq300: 150, sq400: 185, sq500: 225, sq600: 285,
+  };
+  // Area in m² for each size (for substrate/media modifier calculations)
+  const sizeAreaM2 = {
+    a6: 0.01554, a5: 0.03108, a4: 0.06237, a3: 0.12474, a2: 0.24948,
+    a1: 0.49961, a0: 0.99996, sq200: 0.04, sq300: 0.09, sq400: 0.16,
+    sq500: 0.25, sq600: 0.36,
+  };
+  // Sorted by area for custom-size interpolation
+  const sizeList = Object.entries(sizeAreaM2).map(([k, a]) => ({ key: k, area: a })).sort((a, b) => a.area - b.area);
+
+  // Substrate rate differential vs ABS 0.9mm (R/m²), passed through with markup
+  const subRateDiff = { correx_3mm: -50, abs_0_9mm: 0, abs_1_5mm: 60, mfoam_3mm: 60, mfoam_5mm: 125 };
+  // Vinyl media rate differential vs Gloss Indoor (R/m²)
+  const medRateDiff = { gloss_indoor: 0, gloss_outdoor: 34 };
+
+  // Quantity discount scale factors (price at qty n = base1 × n × factor)
+  const qtyFactors = { 1: 1.00, 2: 0.92, 3: 0.85, 4: 0.80, 5: 0.75, 10: 0.65 };
+  const buildTiers = (b) => {
+    const t = {};
+    Object.entries(qtyFactors).forEach(([q, f]) => { t[Number(q)] = Math.round(b * Number(q) * f); });
+    return t;
+  };
+
+  let basePrice1;
+  let areaM2;
+
+  if (size === "custom") {
+    const w = Number(answers && answers.signboardWidth || 0);
+    const h = Number(answers && answers.signboardHeight || 0);
+    const customArea = (w / 1000) * (h / 1000);
+    if (!(customArea > 0)) return { base: 0, qty };
+    areaM2 = customArea;
+    if (customArea <= sizeList[0].area) {
+      basePrice1 = base1[sizeList[0].key];
+    } else if (customArea >= sizeList[sizeList.length - 1].area) {
+      const lo = sizeList[sizeList.length - 2];
+      const hi = sizeList[sizeList.length - 1];
+      const t = (customArea - lo.area) / (hi.area - lo.area);
+      basePrice1 = base1[lo.key] + (base1[hi.key] - base1[lo.key]) * t;
+    } else {
+      for (let i = 0; i < sizeList.length - 1; i++) {
+        const lo = sizeList[i];
+        const hi = sizeList[i + 1];
+        if (customArea >= lo.area && customArea <= hi.area) {
+          const t = (customArea - lo.area) / (hi.area - lo.area);
+          basePrice1 = base1[lo.key] + (base1[hi.key] - base1[lo.key]) * t;
+          break;
+        }
+      }
+    }
+  } else {
+    basePrice1 = base1[size] || base1.a4;
+    areaM2 = sizeAreaM2[size] || sizeAreaM2.a4;
+  }
+
+  if (!(basePrice1 > 0)) return { base: 0, qty };
+
+  let base = interpolateTierPrice_(buildTiers(basePrice1), qty);
+  if (!(base > 0)) base = basePrice1 * qty;
+
+  // Substrate and media modifiers (material cost diff × area × qty, passed through with 1.5× markup)
+  const subDiff = (subRateDiff[substrate] || 0) * areaM2 * qty * 1.5;
+  const medDiff = (medRateDiff[media] || 0) * areaM2 * qty * 1.5;
+  base = Math.max(base + subDiff + medDiff, (basePrice1 * 0.5) * qty);
+
+  // Double sided: substrate already included, adds ~60% for second vinyl + print pass
+  if (sides === "double_sided") base *= 1.6;
+
+  // Turnaround rush fee
+  let rushAddon = 0;
+  if (turnaround === "1") rushAddon = Math.max(50, base * 0.10);
+  else if (turnaround === "2") rushAddon = Math.max(100, base * 0.15);
+
+  return { base: Math.max(0, base + rushAddon), qty, totalQty: qty };
+}
+
 function calculateCustomCanvasQuote_(product, answers) {
   const size = String(answers && answers.size || "a1").toLowerCase();
   const cs = state.canvasPricingSettings || DEFAULT_CANVAS_PRICING_SETTINGS;
@@ -2742,6 +2877,8 @@ function calculatePrintstationQuote_(product, answers, adjustment) {
     raw = calculateCustomNameBadgesQuote_(product, answers);
   } else if (templateType === "isg_custom_colop_stamps") {
     raw = calculateCustomColopStampsQuote_(product, answers);
+  } else if (templateType === "isg_custom_signboards") {
+    raw = calculateCustomSignboardsQuote_(product, answers);
   } else if (templateType === "isg_custom_canvas") {
     raw = calculateCustomCanvasQuote_(product, answers);
   } else if (templateType === "isg_custom_canvas_frame") {
@@ -6571,6 +6708,10 @@ function optimisticPillUpdate_(job, updates, panel) {
   }
   // Fast path: only rebuild the affected lane instead of the entire board.
   const updatedJob = idx >= 0 ? state.jobs[idx] : job;
+  // Track recent status saves so silent refreshes don't overwrite optimistic state.
+  if ("systemStatus" in updates) {
+    state.recentStatusSaves[job.jobNo] = { status: updates.systemStatus, ts: Date.now() };
+  }
   state.savingJobNos.add(job.jobNo);
   if (!fastLaneUpdate_(updatedJob)) render();
   // Re-render the open panel so its pills reflect the optimistic state immediately.
@@ -6579,12 +6720,15 @@ function optimisticPillUpdate_(job, updates, panel) {
   saveJobChanges(job.jobNo, updates, { keepTab: true, quiet: true, optimistic: true }).then(ok => {
     state.savingJobNos.delete(job.jobNo);
     // Refresh panel again after server responds — catches any server-side status changes.
-    if (!fastLaneUpdate_(idx >= 0 ? state.jobs[idx] : updatedJob)) render();
+    const currentJob = idx >= 0 ? state.jobs.find(j => j.jobNo === job.jobNo) || state.jobs[idx] : updatedJob;
+    if (!fastLaneUpdate_(currentJob)) render();
     refreshOpenPanel_();
     if (!ok && snapshot && idx >= 0) {
-      state.jobs[idx] = snapshot;
+      const revertIdx = state.jobs.findIndex(j => j.jobNo === job.jobNo);
+      if (revertIdx >= 0) state.jobs[revertIdx] = snapshot;
+      delete state.recentStatusSaves[job.jobNo];
       state.saveMessage = "Save failed — please try again";
-      if (!fastLaneUpdate_(state.jobs[idx])) render();
+      if (!fastLaneUpdate_(snapshot)) render();
       refreshOpenPanel_();
     }
   });
@@ -11228,7 +11372,7 @@ function renderPriceList() {
     return 99;
   };
   // Slugs replaced by in-house custom products — hide the Printstation versions
-  const EXCLUDED_SLUGS = new Set(["canvas-prints"]);
+  const EXCLUDED_SLUGS = new Set(["canvas-prints", "custom-abs-foam-correx-sign-boards"]);
   const products = snapshot.products.filter(p => !EXCLUDED_SLUGS.has(String(p.slug || ""))).concat(customProducts).slice().sort((a, b) => {
     const ga = classifyGroup(a.name);
     const gb = classifyGroup(b.name);
@@ -11590,6 +11734,7 @@ function renderPriceList() {
           const showCustomInput = String(product && product.id || "") === "isg_booklets" && String(field.key || "").toLowerCase() === "qty" && hasCustom;
           const isCanvasSize = String(product && product.id || "") === "isg_canvas_prints" && String(field.key || "") === "size" && hasCustom;
           const isCarMagnetSize = String(product && product.id || "") === "isg_car_magnets" && String(field.key || "") === "size" && hasCustom;
+          const isSignboardSize = String(product && product.id || "") === "isg_signboards" && String(field.key || "") === "size" && hasCustom;
           return `
             <div class="kv"${swAttr}${field.showWhen ? ' style="display:none"' : ""}>
               <label>${escapeHtml(String(field.label || field.key))}</label>
@@ -11612,6 +11757,12 @@ function renderPriceList() {
                 <div id="pl-car-magnet-custom-dims" style="display:none;margin-top:8px;flex-direction:column;gap:6px">
                   <input id="pl-field-car-magnet-width" type="number" min="100" max="800" placeholder="Width (mm) — max 800" style="width:100%" />
                   <input id="pl-field-car-magnet-height" type="number" min="100" max="600" placeholder="Height (mm) — max 600" style="width:100%" />
+                </div>
+              ` : ""}
+              ${isSignboardSize ? `
+                <div id="pl-signboard-custom-dims" style="display:none;margin-top:8px;flex-direction:column;gap:6px">
+                  <input id="pl-field-signboard-width" type="number" min="50" max="2400" placeholder="Width (mm)" style="width:100%" />
+                  <input id="pl-field-signboard-height" type="number" min="50" max="2400" placeholder="Height (mm)" style="width:100%" />
                 </div>
               ` : ""}
             </div>
@@ -11660,6 +11811,24 @@ function renderPriceList() {
           if (!isCustom) {
             const wEl = dimsWrap.querySelector("#pl-field-car-magnet-width");
             const hEl = dimsWrap.querySelector("#pl-field-car-magnet-height");
+            if (wEl) wEl.value = "";
+            if (hEl) hEl.value = "";
+          }
+        };
+        sizeSel.addEventListener("change", syncDims);
+        syncDims();
+      }
+    }
+    if (String(product && product.id || "") === "isg_signboards") {
+      const sizeSel  = panel.querySelector(`#${getFieldDomId("size")}`);
+      const dimsWrap = panel.querySelector("#pl-signboard-custom-dims");
+      if (sizeSel && dimsWrap) {
+        const syncDims = () => {
+          const isCustom = String(sizeSel.value || "").toLowerCase() === "custom";
+          dimsWrap.style.display = isCustom ? "flex" : "none";
+          if (!isCustom) {
+            const wEl = dimsWrap.querySelector("#pl-field-signboard-width");
+            const hEl = dimsWrap.querySelector("#pl-field-signboard-height");
             if (wEl) wEl.value = "";
             if (hEl) hEl.value = "";
           }
@@ -11720,6 +11889,12 @@ function renderPriceList() {
       ans.carMagnetWidth  = String(wEl ? wEl.value : "");
       ans.carMagnetHeight = String(hEl ? hEl.value : "");
     }
+    if (String(product && product.id || "") === "isg_signboards" && String(ans.size || "").toLowerCase() === "custom") {
+      const wEl = panel.querySelector("#pl-field-signboard-width");
+      const hEl = panel.querySelector("#pl-field-signboard-height");
+      ans.signboardWidth  = String(wEl ? wEl.value : "");
+      ans.signboardHeight = String(hEl ? hEl.value : "");
+    }
     return ans;
   };
 
@@ -11774,6 +11949,10 @@ function renderPriceList() {
     if (String(product && product.id || "") === "isg_car_magnets" && String(answers.size || "").toLowerCase() === "custom") {
       if (!(Number(answers.carMagnetWidth) > 0))  missing.push("Width (mm)");
       if (!(Number(answers.carMagnetHeight) > 0)) missing.push("Height (mm)");
+    }
+    if (String(product && product.id || "") === "isg_signboards" && String(answers.size || "").toLowerCase() === "custom") {
+      if (!(Number(answers.signboardWidth) > 0))  missing.push("Width (mm)");
+      if (!(Number(answers.signboardHeight) > 0)) missing.push("Height (mm)");
     }
     if (missing.length) {
       out.innerHTML = `<div class="muted">Complete all fields: ${escapeHtml(missing.join(", "))}</div>`;
@@ -13016,6 +13195,8 @@ async function loadLiveData(options = {}) {
       // Preserve locally held commLog and paymentMethod that the server doesn't echo back yet.
       const localMap = new Map(state.jobs.map(j => [j.jobNo, j]));
       const storedMethods = loadPaymentMethodStore_();
+      const RECENT_STATUS_WINDOW_MS = 30000;
+      const now = Date.now();
       state.jobs = incoming.map(serverJob => {
         const local = localMap.get(serverJob.jobNo) || {};
         let merged = serverJob;
@@ -13030,6 +13211,14 @@ async function loadLiveData(options = {}) {
         } else {
           // Server returned a value — keep it fresh in localStorage
           persistPaymentMethod_(serverJob.jobNo, serverJob.paymentMethod);
+        }
+        // Preserve recently saved status change — prevents silent refresh from
+        // overwriting an optimistic status update before the backend propagates.
+        const recentStatus = state.recentStatusSaves[serverJob.jobNo];
+        if (recentStatus && (now - recentStatus.ts) < RECENT_STATUS_WINDOW_MS && serverJob.status !== recentStatus.status) {
+          merged = { ...merged, status: recentStatus.status };
+        } else if (recentStatus && (now - recentStatus.ts) >= RECENT_STATUS_WINDOW_MS) {
+          delete state.recentStatusSaves[serverJob.jobNo];
         }
         return merged;
       });
