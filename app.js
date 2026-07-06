@@ -13019,6 +13019,7 @@ async function saveJobChanges(jobNo, updates, options = {}) {
   }
   if (!optimistic && renderDuringSave) render();
   try {
+    console.log("[ISG-DEBUG] saving updates:", JSON.stringify(updates));
     const res = await fetch(API.baseUrl, {
       method: "POST",
       body: JSON.stringify({
@@ -13030,6 +13031,7 @@ async function saveJobChanges(jobNo, updates, options = {}) {
       }),
     });
     const payload = await res.json();
+    console.log("[ISG-DEBUG] save response:", JSON.stringify(payload));
     if (!payload.ok) throw new Error(payload.error || "Save failed");
     if (!noMerge && payload.data && typeof payload.data === "object") {
       const updatedJob = toLocalJob(payload.data);
