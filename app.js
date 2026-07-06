@@ -6031,7 +6031,16 @@ function renderJobDetail() {
     }
     // Serialize spec fields — use current category/product, not original job values.
     const effectiveProduct = (newProduct && newProduct.length > 0) ? newProduct : job.product;
-    const specSchema = getEditableSpecSchema_({ ...job, category: effectiveCategory, product: effectiveProduct });
+    // For sublimation, the sub-product dropdown may have changed — read it from the DOM so the
+    // schema reflects the currently visible fields, not the fields from the original job.specs.
+    let specsJobForSchema = { ...job, category: effectiveCategory, product: effectiveProduct };
+    if (effectiveProduct === "Sublimation" || effectiveCategory === "Sublimation") {
+      const subProductEl = panel.querySelector("#jd-spec-sublimation_product");
+      if (subProductEl && subProductEl.value) {
+        specsJobForSchema = { ...specsJobForSchema, specs: `Product: ${subProductEl.value}` };
+      }
+    }
+    const specSchema = getEditableSpecSchema_(specsJobForSchema);
     if (specSchema) {
       const specLines = [];
       specSchema.fields.forEach(field => {
