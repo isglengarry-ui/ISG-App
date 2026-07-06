@@ -5640,25 +5640,11 @@ function renderJobDetail() {
     if (specsSection) specsSection.closest(".detail-section").insertAdjacentElement("beforebegin", specsBanner);
   }
 
-  setupProductDetailSearch_(panel);
+  setupProductDetailSearch_(panel, job);
 
   // Spec fields: handle showWhen conditional visibility.
   const jdSpecsContainer = panel.querySelector("#jd-specs-container");
-  if (jdSpecsContainer) {
-    const specShowWhenRows = jdSpecsContainer.querySelectorAll("[data-show-when-field]");
-    if (specShowWhenRows.length) {
-      const updateSpecVisibility = () => {
-        specShowWhenRows.forEach(row => {
-          const controlId = row.dataset.showWhenField;
-          const equals = row.dataset.showWhenEquals;
-          const controlEl = jdSpecsContainer.querySelector(`#${controlId}`);
-          row.style.display = controlEl && controlEl.value === equals ? "" : "none";
-        });
-      };
-      updateSpecVisibility();
-      jdSpecsContainer.querySelectorAll("select, input").forEach(el => el.addEventListener("change", updateSpecVisibility));
-    }
-  }
+  if (jdSpecsContainer) wireSpecVisibility_(jdSpecsContainer);
 
   // Comms log: manual entry in full detail view.
   const jdCommsLogBtn = panel.querySelector(".comms-log-btn");
@@ -12051,7 +12037,22 @@ function getIntakeAllProducts_() {
   return items;
 }
 
-function setupProductDetailSearch_(panel) {
+function wireSpecVisibility_(container) {
+  const rows = container.querySelectorAll("[data-show-when-field]");
+  if (!rows.length) return;
+  const update = () => {
+    rows.forEach(row => {
+      const controlId = row.dataset.showWhenField;
+      const equals = row.dataset.showWhenEquals;
+      const controlEl = container.querySelector(`#${controlId}`);
+      row.style.display = controlEl && controlEl.value === equals ? "" : "none";
+    });
+  };
+  update();
+  container.querySelectorAll("select, input").forEach(el => el.addEventListener("change", update));
+}
+
+function setupProductDetailSearch_(panel, job) {
   const wrap = panel.querySelector("#jd-product-wrap");
   if (!wrap) return;
   const searchEl = wrap.querySelector("#jd-product-search");
@@ -12060,6 +12061,15 @@ function setupProductDetailSearch_(panel) {
   if (!searchEl || !resultsEl || !hiddenEl) return;
 
   const allProducts = getIntakeAllProducts_();
+  let committedValue = hiddenEl.value;
+
+  const rerenderSpecs = (newProduct) => {
+    const specsContainer = panel.querySelector("#jd-specs-container");
+    if (!specsContainer) return;
+    const fakeJob = Object.assign({}, job, { product: newProduct, inhouseType: newProduct, specs: "" });
+    specsContainer.innerHTML = renderSpecEditFields_(fakeJob);
+    wireSpecVisibility_(specsContainer);
+  };
 
   const renderResults = (filtered) => {
     if (!filtered.length) { resultsEl.style.display = "none"; return; }
@@ -12072,12 +12082,13 @@ function setupProductDetailSearch_(panel) {
   const selectProduct = (value) => {
     searchEl.value = value;
     hiddenEl.value = value;
+    committedValue = value;
     resultsEl.style.display = "none";
+    rerenderSpecs(value);
   };
 
   searchEl.addEventListener("input", () => {
     const q = searchEl.value.trim().toLowerCase();
-    hiddenEl.value = searchEl.value.trim();
     if (!q) { renderResults(allProducts.slice(0, 12)); return; }
     renderResults(allProducts.filter(p => p.label.toLowerCase().includes(q)));
   });
@@ -12086,6 +12097,14 @@ function setupProductDetailSearch_(panel) {
     const q = searchEl.value.trim().toLowerCase();
     if (!q) { renderResults(allProducts.slice(0, 12)); return; }
     renderResults(allProducts.filter(p => p.label.toLowerCase().includes(q)));
+  });
+
+  searchEl.addEventListener("blur", () => {
+    setTimeout(() => {
+      searchEl.value = committedValue;
+      hiddenEl.value = committedValue;
+      resultsEl.style.display = "none";
+    }, 150);
   });
 
   resultsEl.addEventListener("mousedown", (e) => {
