@@ -12844,6 +12844,10 @@ async function saveJobChanges(jobNo, updates, options = {}) {
       if (mergeIdx >= 0) {
         const merged = { ...state.jobs[mergeIdx], ...updatedJob };
         // Preserve just-edited fields if the backend response came back blank.
+        // Preserve optimistic status if server returned stale data (fastWrite propagation delay).
+        if ("systemStatus" in updates && String(updatedJob.status || "") !== String(updates.systemStatus || "")) {
+          merged.status = String(updates.systemStatus);
+        }
         if ("communicationStatus" in updates && (!updatedJob.communicationStatus || String(updatedJob.communicationStatus).trim() === "")) {
           merged.communicationStatus = String(updates.communicationStatus || "");
         }
