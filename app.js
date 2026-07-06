@@ -5922,20 +5922,22 @@ function renderJobDetail() {
       updates["Artwork Source"] = artworkSourceDetailEl.value;
     }
     const categoryEl = panel.querySelector("#jd-category");
-    if (categoryEl && categoryEl.value !== job.category) {
+    const categoryChanged = categoryEl && categoryEl.value !== job.category;
+    if (categoryChanged) {
       updates.category = categoryEl.value;
-      updates["Category"] = categoryEl.value;
     }
     const effectiveCategory = categoryEl ? categoryEl.value : job.category;
     const productValueEl = panel.querySelector("#jd-product-value");
     const newProduct = productValueEl ? productValueEl.value.trim() : "";
-    if (newProduct && newProduct !== job.product) {
+    if (newProduct && (newProduct !== job.product || categoryChanged)) {
       updates.product = newProduct;
       updates.inhouseType = newProduct;
       if (effectiveCategory === "Outsourced") {
         updates["Outsourced Product Type"] = newProduct;
+        updates["In-house Product Type"] = "";
       } else {
         updates["In-house Product Type"] = newProduct;
+        updates["Outsourced Product Type"] = "";
       }
     }
     if (effectiveCategory === "Returns") updates["Return Sales Reference No."] = salesRef;
