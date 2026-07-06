@@ -12834,13 +12834,18 @@ function persistPaymentMethod_(jobNo, method) {
 }
 
 const PENDING_SAVES_KEY = "isg_pending_saves_v1";
-const PENDING_SAVES_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const PENDING_SAVES_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours fallback
 
 function persistPendingSave_(jobNo, updates) {
   if (!jobNo) return;
   try {
     const store = JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || "{}");
-    store[jobNo] = { updates, ts: Date.now() };
+    // Strip empty sales reference so we never overwrite a real reference with blank.
+    const safeUpdates = { ...updates };
+    if (!String(safeUpdates["Hike Quote / Sale Reference"] || "").trim()) {
+      delete safeUpdates["Hike Quote / Sale Reference"];
+    }
+    store[jobNo] = { updates: safeUpdates, ts: Date.now() };
     localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(store));
   } catch (_e) {}
 }
@@ -12852,6 +12857,14 @@ function clearPendingSave_(jobNo) {
     delete store[jobNo];
     localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(store));
   } catch (_e) {}
+}
+
+function pendingSaveServerMatch_(serverJob, pendingUpdates) {
+  // Returns true when the server data already reflects the pending save — GAS has committed it.
+  if (pendingUpdates.specs !== undefined && serverJob.specs !== pendingUpdates.specs) return false;
+  if (pendingUpdates.category !== undefined && serverJob.category !== pendingUpdates.category) return false;
+  if (pendingUpdates.product !== undefined && serverJob.product !== pendingUpdates.product) return false;
+  return true;
 }
 
 function loadPendingSavesStore_() {
@@ -13261,7 +13274,13 @@ async function loadLiveData(options = {}) {
         }
         // Fall back to localStorage pending saves if in-memory window has expired.
         const pendingSave = pendingSavesStore[serverJob.jobNo];
-        if (pendingSave) merged = applyLocalJobUpdates_(merged, pendingSave.updates);
+        if (pendingSave) {
+          if (pendingSaveServerMatch_(serverJob, pendingSave.updates)) {
+            clearPendingSave_(serverJob.jobNo); // GAS has committed — no longer needed
+          } else {
+            merged = applyLocalJobUpdates_(merged, pendingSave.updates);
+          }
+        }
         return merged;
       });
     } else {
@@ -13283,7 +13302,13 @@ async function loadLiveData(options = {}) {
         }
         // Re-apply recent saves so F5 doesn't lose changes before GAS commits to sheet.
         const pending = pendingSaves[serverJob.jobNo];
-        if (pending) merged = applyLocalJobUpdates_(merged, pending.updates);
+        if (pending) {
+          if (pendingSaveServerMatch_(serverJob, pending.updates)) {
+            clearPendingSave_(serverJob.jobNo); // GAS confirmed — clear the entry
+          } else {
+            merged = applyLocalJobUpdates_(merged, pending.updates);
+          }
+        }
         return merged;
       });
     }
