@@ -6013,8 +6013,9 @@ function renderJobDetail() {
         updates["Payment Method"] = paymentMethodEl.value;
       }
     }
-    // Serialize spec fields
-    const specSchema = getEditableSpecSchema_(job);
+    // Serialize spec fields — use current category/product, not original job values.
+    const effectiveProduct = (newProduct && newProduct.length > 0) ? newProduct : job.product;
+    const specSchema = getEditableSpecSchema_({ ...job, category: effectiveCategory, product: effectiveProduct });
     if (specSchema) {
       const specLines = [];
       specSchema.fields.forEach(field => {
