@@ -13233,6 +13233,7 @@ async function loadLiveData(options = {}) {
       // Preserve locally held commLog and paymentMethod that the server doesn't echo back yet.
       const localMap = new Map(state.jobs.map(j => [j.jobNo, j]));
       const storedMethods = loadPaymentMethodStore_();
+      const pendingSavesStore = loadPendingSavesStore_();
       const RECENT_STATUS_WINDOW_MS = 30000;
       const now = Date.now();
       state.jobs = incoming.map(serverJob => {
@@ -13258,6 +13259,9 @@ async function loadLiveData(options = {}) {
         } else if (recentSave && (now - recentSave.ts) >= RECENT_STATUS_WINDOW_MS) {
           delete state.recentSaves[serverJob.jobNo];
         }
+        // Fall back to localStorage pending saves if in-memory window has expired.
+        const pendingSave = pendingSavesStore[serverJob.jobNo];
+        if (pendingSave) merged = applyLocalJobUpdates_(merged, pendingSave.updates);
         return merged;
       });
     } else {
