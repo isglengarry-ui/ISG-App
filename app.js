@@ -4121,7 +4121,7 @@ function buildPanelHtml_(job) {
     </div>` : "";
 
   const artworkHtml = job.artworkLink ? `
-    <a href="${escH(job.artworkLink)}" target="_blank" rel="noopener noreferrer" class="panel-artwork-btn">View Artwork</a>` : "";
+    <a href="${escH(normalizeUrl_(job.artworkLink))}" target="_blank" rel="noopener noreferrer" class="panel-artwork-btn">View Artwork</a>` : "";
 
   const urgentTag = job.urgent ? `<span class="panel-tag urgent">URGENT</span>` : "";
   const riskTag = job.promiseRisk ? `<span class="panel-tag risk">PROMISE RISK</span>` : "";
@@ -6134,7 +6134,7 @@ async function deleteJob_(jobNo) {
 }
 
 function renderArtworkCurrentHtml_(url) {
-  const u = String(url || "").trim();
+  const u = normalizeUrl_(url);
   if (!u) return "No artwork uploaded";
   return `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer">Open Artwork</a>`;
 }
@@ -9878,7 +9878,7 @@ function renderVinylQueue() {
     const artworkBtn = tr.querySelector(".vq-open-art");
     if (artworkBtn) {
       artworkBtn.onclick = () => {
-        const link = String(job.artworkLink || "").trim();
+        const link = normalizeUrl_(job.artworkLink);
         if (link) window.open(link, "_blank", "noopener,noreferrer");
       };
     }
@@ -13036,6 +13036,13 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function normalizeUrl_(u) {
+  const s = String(u || "").trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
 }
 
 function stripInternalNoteLines_(notes) {
