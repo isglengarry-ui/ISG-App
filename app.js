@@ -4120,7 +4120,7 @@ function buildPanelHtml_(job) {
       <div class="panel-notes">${escH(_cleanNotes)}</div>
     </div>` : "";
 
-  const artworkHtml = job.artworkLink ? `
+  const artworkHtml = job.artworkLink && !isLocalFileUrl_(job.artworkLink) ? `
     <a href="${escH(normalizeUrl_(job.artworkLink))}" target="_blank" rel="noopener noreferrer" class="panel-artwork-btn">View Artwork</a>` : "";
 
   const urgentTag = job.urgent ? `<span class="panel-tag urgent">URGENT</span>` : "";
@@ -6134,8 +6134,10 @@ async function deleteJob_(jobNo) {
 }
 
 function renderArtworkCurrentHtml_(url) {
-  const u = normalizeUrl_(url);
-  if (!u) return "No artwork uploaded";
+  const raw = String(url || "").trim();
+  if (!raw) return "No artwork uploaded";
+  if (isLocalFileUrl_(raw)) return `<span style="color:#b45309;font-size:12px;">⚠ Local file path — please re-upload to Drive</span>`;
+  const u = normalizeUrl_(raw);
   return `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer">Open Artwork</a>`;
 }
 
@@ -9879,7 +9881,8 @@ function renderVinylQueue() {
     if (artworkBtn) {
       artworkBtn.onclick = () => {
         const link = normalizeUrl_(job.artworkLink);
-        if (link) window.open(link, "_blank", "noopener,noreferrer");
+        if (link && !isLocalFileUrl_(link)) window.open(link, "_blank", "noopener,noreferrer");
+        else if (isLocalFileUrl_(link)) window.alert("This artwork was saved as a local file path and can't be opened here. Please re-upload the file using 'Upload Replacement' in the job detail.");
       };
     }
 
@@ -13042,7 +13045,12 @@ function normalizeUrl_(u) {
   const s = String(u || "").trim();
   if (!s) return "";
   if (/^https?:\/\//i.test(s)) return s;
+  if (/^file:\/\//i.test(s)) return s; // leave file:// as-is — caller should warn
   return `https://${s}`;
+}
+
+function isLocalFileUrl_(u) {
+  return /^file:\/\//i.test(String(u || "").trim());
 }
 
 function stripInternalNoteLines_(notes) {
