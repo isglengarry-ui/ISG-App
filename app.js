@@ -10840,14 +10840,23 @@ function renderIntake() {
 
     if (jobType === "In-house Printing") {
       if (!payload.inhouseType.trim()) errors.push("In-house Product Type is required.");
-      if (!inhouseComposedSpecsRaw.trim()) errors.push("Please complete in-house spec questions.");
+      if (isSublimation) {
+        // Sublimation specs live in sublimationComposedSpecs, not inhouseComposedSpecsRaw
+        if (!sublimationComposedSpecs.trim()) errors.push("Please complete sublimation spec questions.");
+      } else {
+        // Only require in-house specs when the product actually has a spec schema
+        const inhouseHasSchema = !!((SPEC_SCHEMAS.inhouse || {})[inhouseTypeEl.value]);
+        if (inhouseHasSchema && !inhouseComposedSpecsRaw.trim()) errors.push("Please complete in-house spec questions.");
+      }
     }
 
     if (jobType === "Outsourced Printing") {
       if (!payload.outsourcedType.trim()) errors.push("Outsourced Product Type is required.");
       if (!payload.outsourcePartner.trim()) errors.push("Outsource Partner is required.");
       if (!payload.turnaroundPurchased.trim()) errors.push("Turnaround Purchased is required.");
-      if (!outsourcedComposedSpecs.trim()) errors.push("Please complete outsourced spec questions.");
+      // Only require outsourced specs when the product actually has a spec schema
+      const outsourcedHasSchema = !!((SPEC_SCHEMAS.outsourced || {})[outsourcedTypeEl.value]);
+      if (outsourcedHasSchema && !outsourcedComposedSpecs.trim()) errors.push("Please complete outsourced spec questions.");
     }
 
     if (jobType === "Ink/Stock Order") {
