@@ -1004,6 +1004,7 @@ const demoJobs = [
 const tabsByRole = {
   staff: [
     ["staff_board", "Staff Board"],
+    ["inhouse_pipeline", "In-House Pipeline"],
     ["job_intake", "Job Intake"],
     ["job_detail", "Job Detail"],
     ["price_list", "Price List"],
@@ -1015,6 +1016,7 @@ const tabsByRole = {
   ],
   owner: [
     ["owner_dashboard", "Owner Dashboard"],
+    ["inhouse_pipeline", "In-House Pipeline"],
     ["owner_actions", "Actions"],
     ["job_detail", "Job Detail"],
     ["price_list", "Price List"],
@@ -1028,6 +1030,7 @@ const tabsByRole = {
   ],
   admin: [
     ["staff_board", "Staff Board"],
+    ["inhouse_pipeline", "In-House Pipeline"],
     ["owner_dashboard", "Owner Dashboard"],
     ["job_intake", "Job Intake"],
     ["job_detail", "Job Detail"],
@@ -4443,6 +4446,340 @@ function isCompletedStatusForCategory_(category, status) {
   if (category === "Returns") return status === "Closed";
   if (category === "Design") return status === "Completed";
   return status === "Collected";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── In-House Pipeline tab (Phase 1 — READ-ONLY view) ───────────────────────
+// A stage-based view of the same In-house jobs shown on the Staff Board.
+// It reuses the exact same filter chain as laneBuckets(): search filter,
+// soft-delete, open-cancellation, plus the staff board filter — so counts
+// always match the Staff Board's In-House lane. It performs NO writes:
+// clicking a card opens the existing job panel (openJobPanel_).
+// All identifiers are prefixed ipl/Ipl to avoid any collision with existing
+// code. If a status ever doesn't map to a stage it is shown in a visible
+// "Unmapped" section rather than being silently hidden.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const IPL_STAGE_DEFS_ = [
+  { key: "wait",   title: "WAITING ON CLIENT",    sub: "Payment · artwork · approvals — chase these" },
+  { key: "design", title: "IN DESIGN",            sub: "ISG's court — internal design work" },
+  { key: "ready",  title: "READY TO START",       sub: "Cleared to produce — nothing blocking" },
+  { key: "prod",   title: "IN PRODUCTION",        sub: "On the machines / print run now" },
+  { key: "coll",   title: "READY FOR COLLECTION", sub: "Done — waiting for the customer" },
+];
+
+// Maps an In-house job to a pipeline stage key.
+// Returns null for jobs that should not appear (completed/cancelled),
+// or "unmapped" for anything unexpected (kept visible as a safety net).
+function iplStageForJob_(job) {
+  const status = String(job.status || "").trim();
+  const isIsgDesign = String(job.artworkSource || "").trim() === "ISG to design";
+  if (["Collected", "Closed", "Completed", "Cancelled"].includes(status)) return null;
+  // Mirrors the ISG-design sub-flow in getNextStatuses_/getCardBadge_:
+  // when ISG must produce the artwork, the ball is in ISG's court, not the client's.
+  if (status === "Design: In Progress") return "design";
+  if ((status === "Waiting Artwork" || status === "Waiting Payment & Artwork") && isIsgDesign) return "design";
+  if (["Waiting Payment", "Waiting Artwork", "Waiting Payment & Artwork", "Waiting Approval",
+       "Awaiting Artwork Approval", "Awaiting Hard Proof Approval"].includes(status)) return "wait";
+  if (status === "Ready") return "ready";
+  if (["Batched (DTF Order)", "Batched (Vinyl Print Run)", "DTF Order Placed", "In Production"].includes(status)) return "prod";
+  if (status === "Ready for Collection") return "coll";
+  return "unmapped";
+}
+
+// Same job universe as laneBuckets("In-house") + the staff board filter.
+function iplGetJobs_() {
+  const staffFilter = state.staffBoardFilter !== "ALL" ? state.staffBoardFilter : null;
+  return applySearchFilter_(state.jobs)
+    .filter(j => !isSoftDeleted_(j))
+    .filter(j => j.category === "In-house")
+    .filter(j => !isCancellationOpen_(j))
+    .filter(j => !staffFilter || String(j.staff || "").trim() === staffFilter);
+}
+
+function iplDueMeta_(job) {
+  const due = String(job.due || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return { cls: "", pill: "", pillCls: "", label: due ? `Due ${due}` : "No due date" };
+  const today = formatYmdLocal_(new Date());
+  const dueDate = new Date(Number(due.slice(0, 4)), Number(due.slice(5, 7)) - 1, Number(due.slice(8, 10)));
+  const todayDate = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)));
+  const diffDays = Math.round((dueDate - todayDate) / 86400000);
+  if (diffDays < 0) {
+    const d = Math.abs(diffDays);
+    return { cls: "ipl-overdue", pill: `OVERDUE · ${d} day${d === 1 ? "" : "s"}`, pillCls: "ipl-pill-overdue", label: "" };
+  }
+  if (diffDays === 0) return { cls: "ipl-due-soon", pill: "DUE TODAY", pillCls: "ipl-pill-today", label: "" };
+  if (diffDays === 1) return { cls: "ipl-due-soon", pill: "DUE TOMORROW", pillCls: "ipl-pill-today", label: "" };
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return { cls: "", pill: "", pillCls: "", label: `Due ${dayNames[dueDate.getDay()]} ${dueDate.getDate()} ${monthNames[dueDate.getMonth()]}` };
+}
+
+function iplWaitLine_(job, stageKey) {
+  const status = String(job.status || "").trim();
+  const isIsgDesign = String(job.artworkSource || "").trim() === "ISG to design";
+  if (stageKey === "design") {
+    if (status === "Design: In Progress") return { icon: "✎", text: "Design in progress", cls: "ipl-wl-design" };
+    const extra = status === "Waiting Payment & Artwork" ? " · also waiting payment" : "";
+    return { icon: "✎", text: "Design not started" + extra, cls: "ipl-wl-design" };
+  }
+  if (stageKey === "wait") {
+    const map = {
+      "Waiting Payment": "Waiting: payment",
+      "Waiting Artwork": "Waiting: client artwork",
+      "Waiting Payment & Artwork": "Waiting: payment + artwork",
+      "Waiting Approval": "Waiting: approval",
+      "Awaiting Artwork Approval": "Waiting: artwork approval",
+      "Awaiting Hard Proof Approval": "Waiting: hard proof approval",
+    };
+    return { icon: "⏳", text: map[status] || `Waiting: ${status}`, cls: "ipl-wl-wait" };
+  }
+  if (stageKey === "prod" && status !== "In Production") {
+    return { icon: "⚙", text: status, cls: "ipl-wl-prod" };
+  }
+  if (stageKey === "coll") {
+    return { icon: "📞", text: "Awaiting pickup", cls: "ipl-wl-coll" };
+  }
+  return null;
+}
+
+function iplStaffAvatar_(job) {
+  const name = String(job.staff || "").trim();
+  if (!name) return "";
+  const idx = Math.max(0, STAFF_NAMES_.indexOf(name)) % 6;
+  return `<span class="ipl-av ipl-av-${idx}" title="${escapeHtml(name)}">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
+}
+
+function iplCardBadgesHtml_(job) {
+  const parts = [];
+  const dueMeta = iplDueMeta_(job);
+  if (state.savingJobNos.has(job.jobNo)) {
+    parts.push(`<span class="ipl-pill ipl-pill-due">Updating…</span>`);
+  }
+  if (dueMeta.pill) parts.push(`<span class="ipl-pill ${dueMeta.pillCls}">${escapeHtml(dueMeta.pill)}</span>`);
+  else parts.push(`<span class="ipl-pill ipl-pill-due">${escapeHtml(dueMeta.label)}</span>`);
+  if (shouldShowUnpaidCardBadge_(job)) parts.push(`<span class="ipl-pill ipl-pill-unpaid">UNPAID</span>`);
+  if (String(job.payment || "").trim() === "Pay on Collection") parts.push(`<span class="ipl-pill ipl-pill-due">Pay on Collection</span>`);
+  if (job.promiseRisk) parts.push(`<span class="ipl-pill ipl-pill-risk">Promise risk</span>`);
+  if (job.urgent) parts.push(`<span class="ipl-pill ipl-pill-risk">URGENT</span>`);
+  if (getIncompleteSpecFields_(job).length) parts.push(`<span class="ipl-pill ipl-pill-specs">Specs incomplete</span>`);
+  return parts.join("");
+}
+
+function iplJobCard_(job, stageKey, groupInfo) {
+  const dueMeta = iplDueMeta_(job);
+  const el = document.createElement("article");
+  el.className = `ipl-card ${dueMeta.cls}`;
+  const wl = iplWaitLine_(job, stageKey);
+  // If this job's order has other active jobs sitting in OTHER stages, say so —
+  // especially at collection, where handing over a partial order is a mistake.
+  let linkLine = "";
+  const gi = job.orderGroup && groupInfo ? groupInfo[job.orderGroup] : null;
+  if (gi && gi.activeTotal > 1) {
+    const othersElsewhere = gi.activeTotal - (gi.stages[stageKey] || 0);
+    if (othersElsewhere > 0) {
+      const stageNames = Object.keys(gi.stages).filter(k => k !== stageKey).map(k => {
+        const def = IPL_STAGE_DEFS_.find(d => d.key === k);
+        return def ? def.title.toLowerCase() : k;
+      });
+      const hold = stageKey === "coll" ? " — hold handover?" : "";
+      linkLine = `<div class="ipl-linkline">↪ Order ${escapeHtml(job.orderGroup)} · ${othersElsewhere} more job${othersElsewhere === 1 ? "" : "s"} in: ${escapeHtml(stageNames.join(", "))}${hold}</div>`;
+    }
+  }
+  el.innerHTML = `
+    ${iplStaffAvatar_(job)}
+    <div class="ipl-prod-name">${escapeHtml(job.product || "(no product)")}</div>
+    <div class="ipl-cust">${escapeHtml(job.customer || "")}</div>
+    <div class="ipl-jobnum">${escapeHtml(job.jobNo)}${stageKey === "unmapped" ? ` · status: ${escapeHtml(job.status)}` : ""}</div>
+    ${wl ? `<div class="ipl-waitline ${wl.cls}">${wl.icon} ${escapeHtml(wl.text)}</div>` : ""}
+    ${linkLine}
+    <div class="ipl-badges">${iplCardBadgesHtml_(job)}</div>
+  `;
+  el.onclick = () => { state.selectedJobNo = job.jobNo; openJobPanel_(job.jobNo); };
+  return el;
+}
+
+// Group card: 2+ jobs of the same order sitting in the SAME stage.
+function iplGroupCard_(orderGroup, jobsInStage, stageKey, groupInfo) {
+  const worst = jobsInStage.map(iplDueMeta_).reduce((a, b) => {
+    const rank = m => (m.cls === "ipl-overdue" ? 2 : m.cls === "ipl-due-soon" ? 1 : 0);
+    return rank(b) > rank(a) ? b : a;
+  });
+  const el = document.createElement("article");
+  el.className = `ipl-card ipl-group ${worst.cls}`;
+  const customer = jobsInStage[0].customer || "";
+  const othersActive = groupInfo.activeTotal - jobsInStage.length;
+  const allHere = stageKey === "coll" && othersActive === 0;
+  const rows = jobsInStage.map(j => `
+    <div class="ipl-g-job">
+      ${allHere ? `<span class="ipl-g-tick">✓</span>` : ""}
+      <span class="ipl-g-prod">${escapeHtml(j.product || "(no product)")}</span>
+      ${getIncompleteSpecFields_(j).length ? `<span class="ipl-pill ipl-pill-specs">Specs</span>` : ""}
+      <span class="ipl-g-num">${escapeHtml(j.jobNo)}</span>
+    </div>`).join("");
+  const linkBits = [];
+  if (othersActive > 0) {
+    const stageNames = groupInfo.otherStages.map(k => {
+      const def = IPL_STAGE_DEFS_.find(d => d.key === k);
+      return def ? def.title.toLowerCase() : k;
+    });
+    linkBits.push(`↪ ${othersActive} more job${othersActive === 1 ? "" : "s"} from this order in: ${stageNames.join(", ")}`);
+    if (stageKey === "coll") linkBits.push("— hold handover?");
+  }
+  if (groupInfo.doneCount > 0) linkBits.push(`(${groupInfo.doneCount} already collected)`);
+  el.innerHTML = `
+    ${allHere ? `<span class="ipl-g-complete">✓ ALL ${jobsInStage.length} HERE</span>` : ""}
+    <div class="ipl-prod-name">${escapeHtml(customer)}</div>
+    <div class="ipl-cust">Order ${escapeHtml(orderGroup)} · ${jobsInStage.length} of ${groupInfo.activeTotal} job${groupInfo.activeTotal === 1 ? "" : "s"} in this stage</div>
+    <div class="ipl-g-jobs">${rows}</div>
+    ${linkBits.length ? `<div class="ipl-linkline">${escapeHtml(linkBits.join(" "))}</div>` : ""}
+    <div class="ipl-badges">${worst.pill ? `<span class="ipl-pill ${worst.pillCls}">${escapeHtml(worst.pill)}</span>` : ""}</div>
+  `;
+  el.onclick = () => { state.selectedJobNo = jobsInStage[0].jobNo; openJobPanel_(jobsInStage[0].jobNo); };
+  return el;
+}
+
+function iplSortKey_(job) {
+  const due = String(job.due || "9999-12-31");
+  return `${due}|${job.jobNo}`;
+}
+
+function renderInhousePipeline() {
+  const wrap = document.createElement("section");
+  wrap.className = "ipl-wrap";
+
+  const jobs = iplGetJobs_();
+
+  // Bucket jobs by stage.
+  const byStage = { wait: [], design: [], ready: [], prod: [], coll: [], unmapped: [] };
+  jobs.forEach(j => {
+    const stage = iplStageForJob_(j);
+    if (stage) byStage[stage].push(j);
+  });
+
+  // Order-group info across the whole in-house set (mirrors card()'s orderGroup logic).
+  const groupInfo = {};
+  jobs.forEach(j => {
+    if (!j.orderGroup) return;
+    if (!groupInfo[j.orderGroup]) groupInfo[j.orderGroup] = { activeTotal: 0, doneCount: 0, stages: {} };
+    const stage = iplStageForJob_(j);
+    if (stage) {
+      groupInfo[j.orderGroup].activeTotal += 1;
+      groupInfo[j.orderGroup].stages[stage] = (groupInfo[j.orderGroup].stages[stage] || 0) + 1;
+    } else if (["Collected", "Closed"].includes(String(j.status || ""))) {
+      groupInfo[j.orderGroup].doneCount += 1;
+    }
+  });
+
+  // ── Staff filter bar (same behaviour/state as the Staff Board) ────────────
+  const activeJobs = state.jobs.filter(j => !isSoftDeleted_(j) && !isCancellationOpen_(j) && !isJobCompleted_(j));
+  const staffNames = dedupeStrings_(activeJobs.map(j => String(j.staff || "").trim()).filter(Boolean)).sort();
+  if (staffNames.length > 0) {
+    const bar = document.createElement("div");
+    bar.className = "staff-filter-bar";
+    bar.innerHTML = `
+      <label for="ipl-staff-filter">Filter by staff:</label>
+      <select id="ipl-staff-filter">
+        <option value="ALL">All staff</option>
+        ${staffNames.map(s => `<option value="${escapeHtml(s)}"${state.staffBoardFilter === s ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+      </select>
+    `;
+    bar.querySelector("#ipl-staff-filter").addEventListener("change", (e) => {
+      state.staffBoardFilter = e.target.value;
+      render();
+    });
+    wrap.appendChild(bar);
+  }
+
+  // ── Health strip ──────────────────────────────────────────────────────────
+  const visible = [...byStage.wait, ...byStage.design, ...byStage.ready, ...byStage.prod, ...byStage.coll, ...byStage.unmapped];
+  const metas = visible.map(j => ({ j, m: iplDueMeta_(j) }));
+  const overdueCount = metas.filter(x => x.m.cls === "ipl-overdue").length;
+  const soonCount = metas.filter(x => x.m.cls === "ipl-due-soon").length;
+  const unpaidCount = visible.filter(j => shouldShowUnpaidCardBadge_(j) || ["Waiting Payment", "Waiting Payment & Artwork"].includes(String(j.status || ""))).length;
+  const summary = document.createElement("div");
+  summary.className = "ipl-summary";
+  const mappedCount = visible.length - byStage.unmapped.length;
+  summary.innerHTML = `
+    <div class="ipl-s-title"><span class="ipl-s-big">In-House</span><span class="ipl-s-sub">${mappedCount} active job${mappedCount === 1 ? "" : "s"} · same jobs as the Staff Board's In-House lane${byStage.unmapped.length ? ` · +${byStage.unmapped.length} unmapped below` : ""}</span></div>
+    <div class="ipl-tile ipl-tile-overdue"><span class="ipl-t-n">${overdueCount}</span><span class="ipl-t-l">Overdue</span></div>
+    <div class="ipl-tile ipl-tile-today"><span class="ipl-t-n">${soonCount}</span><span class="ipl-t-l">Due today / tomorrow</span></div>
+    <div class="ipl-tile ipl-tile-unpaid"><span class="ipl-t-n">${unpaidCount}</span><span class="ipl-t-l">Unpaid</span></div>
+    <div class="ipl-tile ipl-tile-waiting"><span class="ipl-t-n">${byStage.wait.length}</span><span class="ipl-t-l">Waiting on client</span></div>
+  `;
+  wrap.appendChild(summary);
+
+  // ── Stage columns ─────────────────────────────────────────────────────────
+  const board = document.createElement("div");
+  board.className = "ipl-board";
+  IPL_STAGE_DEFS_.forEach(def => {
+    const col = document.createElement("div");
+    col.className = `ipl-stage ipl-stage-${def.key}`;
+    const list = byStage[def.key];
+
+    // Split into grouped (2+ same order, same stage) and single cards.
+    const groups = {};
+    const singles = [];
+    list.forEach(j => {
+      if (j.orderGroup && list.filter(x => x.orderGroup === j.orderGroup).length >= 2) {
+        (groups[j.orderGroup] = groups[j.orderGroup] || []).push(j);
+      } else {
+        singles.push(j);
+      }
+    });
+
+    const jobCount = list.length;
+    col.innerHTML = `
+      <div class="ipl-stage-head">${def.title} <span class="ipl-stage-count">${jobCount}</span></div>
+      <div class="ipl-stage-sub">${def.sub}</div>
+    `;
+    const cardsEl = document.createElement("div");
+    cardsEl.className = "ipl-cards";
+
+    // Sort: overdue first (most overdue first), then due date, then job no.
+    const entries = [
+      ...Object.entries(groups).map(([og, js]) => ({
+        kind: "group", og, js,
+        key: js.map(iplSortKey_).sort()[0],
+        overdue: js.some(j => iplDueMeta_(j).cls === "ipl-overdue"),
+      })),
+      ...singles.map(j => ({ kind: "single", j, key: iplSortKey_(j), overdue: iplDueMeta_(j).cls === "ipl-overdue" })),
+    ];
+    entries.sort((a, b) => (b.overdue - a.overdue) || a.key.localeCompare(b.key));
+
+    if (!entries.length) {
+      const p = document.createElement("div");
+      p.className = "ipl-empty";
+      p.textContent = "All clear";
+      cardsEl.appendChild(p);
+    }
+    entries.forEach(e => {
+      if (e.kind === "group") {
+        const gi = groupInfo[e.og] || { activeTotal: e.js.length, doneCount: 0, stages: {} };
+        const otherStages = Object.keys(gi.stages).filter(k => k !== def.key);
+        cardsEl.appendChild(iplGroupCard_(e.og, e.js, def.key, { activeTotal: gi.activeTotal, doneCount: gi.doneCount, otherStages }));
+      } else {
+        cardsEl.appendChild(iplJobCard_(e.j, def.key, groupInfo));
+      }
+    });
+    col.appendChild(cardsEl);
+    board.appendChild(col);
+  });
+  wrap.appendChild(board);
+
+  // ── Unmapped safety net — never hide a job silently ───────────────────────
+  if (byStage.unmapped.length) {
+    const un = document.createElement("div");
+    un.className = "ipl-unmapped";
+    un.innerHTML = `<h4>Unmapped statuses (${byStage.unmapped.length}) — these jobs are safe, their status just isn't assigned to a pipeline stage yet:</h4>`;
+    const cardsEl = document.createElement("div");
+    cardsEl.className = "ipl-cards ipl-cards-row";
+    byStage.unmapped.forEach(j => cardsEl.appendChild(iplJobCard_(j, "unmapped")));
+    un.appendChild(cardsEl);
+    wrap.appendChild(un);
+  }
+
+  return wrap;
 }
 
 function renderOwnerDesignQueue() {
@@ -12691,6 +13028,7 @@ function render() {
       app.appendChild(renderBoard(false));
       app.appendChild(renderCancelledQueue(false));
     }
+    if (state.tab === "inhouse_pipeline") app.appendChild(renderInhousePipeline());
     if (state.tab === "owner_dashboard") {
       app.appendChild(renderBoard(true));
       app.appendChild(renderOwnerDesignQueue());

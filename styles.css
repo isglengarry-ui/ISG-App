@@ -2403,3 +2403,171 @@ th {
   color: var(--text);
 }
 .ji-product-search-item:hover { background: var(--primary-soft); color: var(--primary); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   In-House Pipeline tab (Phase 1 — read-only). All classes prefixed .ipl-
+   Treatment A: solid coloured stage headers, neutral column bodies.
+   Red/amber are reserved for urgency (overdue / due soon) only.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ipl-wrap { display: flex; flex-direction: column; gap: 16px; }
+
+/* Health strip */
+.ipl-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(120px, 190px));
+  gap: 12px;
+  align-items: stretch;
+}
+.ipl-s-title {
+  background: var(--surface);
+  border: var(--stroke) solid var(--line);
+  border-radius: var(--radius-surface);
+  padding: 12px 18px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.ipl-s-big { font-size: 20px; font-weight: var(--fw-heavy); letter-spacing: -0.02em; }
+.ipl-s-sub { font-size: var(--fs-small); color: var(--muted); margin-top: 2px; }
+.ipl-tile {
+  background: var(--surface);
+  border: var(--stroke) solid var(--line);
+  border-radius: var(--radius-surface);
+  padding: 10px 15px;
+  display: flex; flex-direction: column; gap: 1px;
+  position: relative; overflow: hidden;
+}
+.ipl-tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.ipl-t-n { font-size: 20px; font-weight: var(--fw-heavy); }
+.ipl-t-l { font-size: 11.5px; font-weight: var(--fw-medium); color: var(--muted); }
+.ipl-tile-overdue::before { background: #c0392b; }
+.ipl-tile-overdue .ipl-t-n { color: #c0392b; }
+.ipl-tile-today::before { background: #f2a71b; }
+.ipl-tile-today .ipl-t-n { color: #b45309; }
+.ipl-tile-unpaid::before { background: #c0392b; }
+.ipl-tile-unpaid .ipl-t-n { color: #c0392b; }
+.ipl-tile-waiting::before { background: #f2a71b; }
+.ipl-tile-waiting .ipl-t-n { color: #b45309; }
+
+/* Stage columns */
+.ipl-board {
+  display: grid;
+  grid-template-columns: 1.12fr 0.82fr 0.94fr 1.04fr 1.12fr;
+  gap: 14px;
+  align-items: start;
+}
+.ipl-stage {
+  background: #eceef2;
+  border: var(--stroke) solid var(--line);
+  border-radius: 14px;
+  padding: 8px;
+}
+.ipl-stage-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: var(--fw-heavy);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+}
+.ipl-stage-count {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  padding: 2px 9px;
+}
+.ipl-stage-sub { font-size: 11px; color: var(--muted); padding: 7px 6px 8px; }
+/* Stage colours (align with the app's lane palette family) */
+.ipl-stage-wait   .ipl-stage-head { background: #b45309; }
+.ipl-stage-design .ipl-stage-head { background: #8b3fb8; }
+.ipl-stage-ready  .ipl-stage-head { background: #2e7d43; }
+.ipl-stage-prod   .ipl-stage-head { background: #2456c9; }
+.ipl-stage-coll   .ipl-stage-head { background: #5c4a8c; }
+
+.ipl-cards { display: flex; flex-direction: column; gap: 10px; }
+.ipl-cards-row { flex-direction: row; flex-wrap: wrap; }
+.ipl-empty { font-size: 11.5px; color: var(--muted); font-style: italic; text-align: center; padding: 14px 4px; }
+
+/* Cards — product first, urgency on the top edge */
+.ipl-card {
+  background: var(--surface);
+  border: var(--stroke) solid var(--line);
+  border-top: 3px solid transparent;
+  border-radius: var(--radius-card);
+  padding: 11px 12px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  cursor: pointer;
+}
+.ipl-card:hover { box-shadow: var(--shadow); }
+.ipl-card.ipl-overdue  { border-top-color: #c0392b; }
+.ipl-card.ipl-due-soon { border-top-color: #f2a71b; }
+.ipl-prod-name { font-size: 14.5px; font-weight: var(--fw-heavy); letter-spacing: -0.01em; padding-right: 30px; }
+.ipl-cust { font-size: var(--fs-small); color: var(--muted); margin-top: 2px; }
+.ipl-jobnum { font-size: 10.5px; color: #a4abb8; font-weight: var(--fw-medium); letter-spacing: 0.04em; margin-top: 1px; }
+.ipl-waitline { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; font-weight: var(--fw-semibold); }
+.ipl-wl-wait   { color: #b45309; }
+.ipl-wl-design { color: #8b3fb8; }
+.ipl-wl-prod   { color: #2456c9; }
+.ipl-wl-coll   { color: #0e7f86; }
+.ipl-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; align-items: center; }
+.ipl-pill {
+  font-size: 10.5px; font-weight: var(--fw-bold);
+  border-radius: 6px; padding: 3px 8px; line-height: 1.2; letter-spacing: 0.02em;
+}
+.ipl-pill-overdue { background: #c0392b; color: #fff; }
+.ipl-pill-today   { background: #f2a71b; color: #20180a; }
+.ipl-pill-due     { background: #f1f3f7; color: var(--muted); font-weight: var(--fw-medium); }
+.ipl-pill-unpaid  { background: #fff; color: #c0392b; border: 1.5px solid #c0392b; }
+.ipl-pill-specs   { background: transparent; color: #b45309; border: 1px dashed #d9a63f; font-weight: var(--fw-medium); }
+.ipl-pill-risk    { background: #fdeeec; color: #b02a1f; }
+.ipl-linkline {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 8px; font-size: 10.5px; font-weight: var(--fw-medium);
+  color: #5b7bd0; background: #ecf1fc; border-radius: 6px; padding: 4px 8px;
+}
+
+/* Staff avatar */
+.ipl-av {
+  width: 24px; height: 24px; border-radius: 50%;
+  color: #fff; font-size: 10px; font-weight: var(--fw-bold);
+  display: flex; align-items: center; justify-content: center;
+  position: absolute; top: 9px; right: 9px;
+  box-shadow: 0 0 0 2px #fff;
+}
+.ipl-av-0 { background: #0e7f86; } /* Chad */
+.ipl-av-1 { background: #b4547a; } /* Toufiecka */
+.ipl-av-2 { background: #7a8c2e; } /* Faith */
+.ipl-av-3 { background: #8a5fc0; } /* Wesley */
+.ipl-av-4 { background: #c07a10; } /* Ingrid */
+.ipl-av-5 { background: #4a5fc4; } /* Natasché */
+
+/* Group card */
+.ipl-group { cursor: pointer; }
+.ipl-g-jobs { padding-top: 4px; margin-top: 6px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 4px; }
+.ipl-g-job { display: flex; gap: 7px; font-size: var(--fs-small); align-items: center; }
+.ipl-g-tick { color: #2e7d43; font-weight: var(--fw-heavy); font-size: 11px; }
+.ipl-g-prod { font-weight: var(--fw-semibold); }
+.ipl-g-num { color: #a4abb8; font-size: 10px; font-weight: var(--fw-medium); margin-left: auto; }
+.ipl-g-complete {
+  position: absolute; top: 9px; right: 9px;
+  background: #e9f6ee; color: #2e7d43;
+  font-size: 10px; font-weight: var(--fw-heavy);
+  border-radius: var(--radius-pill); padding: 3px 9px;
+}
+
+/* Unmapped safety net */
+.ipl-unmapped {
+  background: #fff8e6;
+  border: 1px solid #e6c25a;
+  border-radius: var(--radius-surface);
+  padding: 12px 14px;
+}
+.ipl-unmapped h4 { margin: 0 0 10px; font-size: 13px; color: #7a5a10; }
+.ipl-unmapped .ipl-card { max-width: 300px; }
+
+@media (max-width: 1100px) {
+  .ipl-board { grid-template-columns: repeat(2, 1fr); }
+  .ipl-summary { grid-template-columns: 1fr 1fr; }
+}
