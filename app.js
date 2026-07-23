@@ -4611,11 +4611,11 @@ function iplGroupCard_(orderGroup, jobsInStage, stageKey, groupInfo) {
   const othersActive = groupInfo.activeTotal - jobsInStage.length;
   const allHere = stageKey === "coll" && othersActive === 0;
   const rows = jobsInStage.map(j => `
-    <div class="ipl-g-job">
+    <div class="ipl-g-job" data-jobno="${escapeHtml(j.jobNo)}" title="Open ${escapeHtml(j.jobNo)}">
       ${allHere ? `<span class="ipl-g-tick">✓</span>` : ""}
       <span class="ipl-g-prod">${escapeHtml(j.product || "(no product)")}</span>
       ${getIncompleteSpecFields_(j).length ? `<span class="ipl-pill ipl-pill-specs">Specs</span>` : ""}
-      <span class="ipl-g-num">${escapeHtml(j.jobNo)}</span>
+      <span class="ipl-g-num">${escapeHtml(j.jobNo)} ›</span>
     </div>`).join("");
   const linkBits = [];
   if (othersActive > 0) {
@@ -4635,6 +4635,15 @@ function iplGroupCard_(orderGroup, jobsInStage, stageKey, groupInfo) {
     ${linkBits.length ? `<div class="ipl-linkline">${escapeHtml(linkBits.join(" "))}</div>` : ""}
     <div class="ipl-badges">${worst.pill ? `<span class="ipl-pill ${worst.pillCls}">${escapeHtml(worst.pill)}</span>` : ""}</div>
   `;
+  // Each job line opens ITS OWN detail panel; clicking elsewhere on the card
+  // falls back to the first job in the group.
+  el.querySelectorAll(".ipl-g-job").forEach(rowEl => {
+    rowEl.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const jobNo = rowEl.dataset.jobno;
+      if (jobNo) { state.selectedJobNo = jobNo; openJobPanel_(jobNo); }
+    });
+  });
   el.onclick = () => { state.selectedJobNo = jobsInStage[0].jobNo; openJobPanel_(jobsInStage[0].jobNo); };
   return el;
 }

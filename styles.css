@@ -2571,3 +2571,13 @@ th {
   .ipl-board { grid-template-columns: repeat(2, 1fr); }
   .ipl-summary { grid-template-columns: 1fr 1fr; }
 }
+
+/* Group card job lines are individually clickable */
+.ipl-g-job {
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 0 -6px;
+  padding: 3px 6px;
+}
+.ipl-g-job:hover { background: var(--primary-soft); }
+.ipl-g-job:hover .ipl-g-num { color: var(--primary); }
