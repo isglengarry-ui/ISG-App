@@ -3989,7 +3989,7 @@ function setupPanelHandlers_(drawer, job) {
       if (!state.staffName) { window.alert("Please select your name from the Staff dropdown in the header first."); return; }
       const url = notifyBtn.dataset.notifyUrl;
       const type = notifyBtn.dataset.notifyType === "whatsapp" ? "WhatsApp" : "Email";
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (url) openNotifyUrl_({ type: notifyBtn.dataset.notifyType, url });
       const freshJob = state.jobs.find(j => j.jobNo === job.jobNo) || job;
       addCommLogEntry_(freshJob, type, "Customer notified");
       refreshOpenPanel_();
@@ -6909,7 +6909,8 @@ function handlePillAction_(toStatus, job, panel) {
     const isArtworkApproval = artworkPendingStatuses.includes(job.status) && (toStatus === "In Production" || toStatus === "Ready to Order");
     if (isArtworkApproval) {
       const staffName = state.staffName || "?";
-      addCommLogEntry_(job, "Status", `Artwork approved by ${staffName}`);
+      // Local only — the optimisticPillUpdate_ below carries the log in its own save.
+      addCommLogEntryLocal_(job, "Status", `Artwork approved by ${staffName}`);
     }
     if (!panel) closeJobPanel_();
     optimisticPillUpdate_(job, { systemStatus: toStatus, ...(isArtworkApproval ? { customerApproved: true } : {}) }, panel);
@@ -7054,8 +7055,12 @@ function optimisticPillUpdate_(job, updates, panel) {
     state.jobs[idx] = applyLocalJobUpdates_(state.jobs[idx], updates);
   }
   // Auto-log status and payment changes to the activity log.
+  // IMPORTANT: the log entry is recorded locally and merged into the SAME
+  // updateJob request as the status change below — a separate concurrent save
+  // used to race the status write on the backend and could revert it.
   const hasStatusChange = "systemStatus" in updates;
   const hasPaidChange = "paymentStatus" in updates && updates.paymentStatus === "Paid";
+  let mergedUpdates = updates;
   if (hasStatusChange || hasPaidChange) {
     const parts = [];
     if (hasStatusChange) parts.push(`Status → ${updates.systemStatus}`);
@@ -7064,7 +7069,8 @@ function optimisticPillUpdate_(job, updates, panel) {
       parts.push(`Payment marked as Paid${method}`);
     }
     const freshJob = idx >= 0 ? state.jobs[idx] : job;
-    addCommLogEntry_(freshJob, "Status", parts.join(" · "));
+    const newLog = addCommLogEntryLocal_(freshJob, "Status", parts.join(" · "));
+    mergedUpdates = { ...updates, commLog: JSON.stringify(newLog) };
   }
   // Sync the status dropdown if it's visible.
   if ("systemStatus" in updates) {
@@ -7074,13 +7080,14 @@ function optimisticPillUpdate_(job, updates, panel) {
   // Fast path: only rebuild the affected lane instead of the entire board.
   const updatedJob = idx >= 0 ? state.jobs[idx] : job;
   // Track recent saves so silent refreshes don't overwrite optimistic state.
-  state.recentSaves[job.jobNo] = { updates, ts: Date.now() };
+  state.recentSaves[job.jobNo] = { updates: mergedUpdates, ts: Date.now() };
   state.savingJobNos.add(job.jobNo);
   if (!fastLaneUpdate_(updatedJob)) render();
   // Re-render the open panel so its pills reflect the optimistic state immediately.
   refreshOpenPanel_();
-  // Fire API in background — revert on failure.
-  saveJobChanges(job.jobNo, updates, { keepTab: true, quiet: true, optimistic: true }).then(ok => {
+  // Fire API in background — revert on failure. One request carries status,
+  // payment AND the comm-log entry so nothing can race on the backend row.
+  saveJobChanges(job.jobNo, mergedUpdates, { keepTab: true, quiet: true, optimistic: true }).then(ok => {
     state.savingJobNos.delete(job.jobNo);
     // Refresh panel again after server responds — catches any server-side status changes.
     const currentJob = idx >= 0 ? state.jobs.find(j => j.jobNo === job.jobNo) || state.jobs[idx] : updatedJob;
@@ -7155,14 +7162,15 @@ function showReadyForCollectionModal_(job, panel) {
   overlay.querySelector("#rfc-cancel").onclick = () => overlay.remove();
   overlay.querySelector("#rfc-skip").onclick   = () => confirm_();
   if (waNotify) overlay.querySelector("#rfc-wa").onclick = () => {
-    addCommLogEntry_(job, "WhatsApp", "Ready for Collection — customer notified");
+    // Local only — confirm_'s status save carries the log entry in the same request.
+    addCommLogEntryLocal_(job, "WhatsApp", "Ready for Collection — customer notified");
     confirm_();
-    window.open(waNotify.url, "_blank", "noopener,noreferrer");
+    openNotifyUrl_(waNotify);
   };
   if (emailNotify) overlay.querySelector("#rfc-email").onclick = () => {
-    addCommLogEntry_(job, "Email", "Ready for Collection — customer notified");
+    addCommLogEntryLocal_(job, "Email", "Ready for Collection — customer notified");
     confirm_();
-    window.open(emailNotify.url, "_blank", "noopener,noreferrer");
+    openNotifyUrl_(emailNotify);
   };
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
 }
@@ -7514,7 +7522,7 @@ function showOrderConfirmationModal_(job) {
   if (waUrl) overlay.querySelector("#ocm-wa").onclick = () => {
     overlay.remove();
     addCommLogEntry_(job, "WhatsApp", "Order confirmation sent");
-    window.open(waUrl, "_blank", "noopener,noreferrer");
+    openNotifyUrl_({ type: "whatsapp", url: waUrl });
   };
   if (emailUrl) overlay.querySelector("#ocm-email").onclick = () => {
     overlay.remove();
@@ -9835,7 +9843,10 @@ function renderSupplierOrderTable_(title, orderTag, jobs, opts = {}) {
         }
         const updates = buildBatchRowUpdates_(job, orderTag, nextStatus, ref);
         if (nextStatus !== job.status) {
-          addCommLogEntry_(job, "Status", `Status → ${nextStatus}`);
+          // Local only — the batch save below carries the log in the same request,
+          // so it can't race the status write on the backend row.
+          const newLog = addCommLogEntryLocal_(job, "Status", `Status → ${nextStatus}`);
+          updates.commLog = JSON.stringify(newLog);
         }
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
@@ -13241,6 +13252,16 @@ function persistPendingSave_(jobNo, updates) {
   } catch (_e) {}
 }
 
+function markPendingSaveWarned_(jobNo) {
+  try {
+    const store = JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || "{}");
+    if (store[jobNo]) {
+      store[jobNo].warned = true;
+      localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(store));
+    }
+  } catch (_e) {}
+}
+
 function clearPendingSave_(jobNo) {
   if (!jobNo) return;
   try {
@@ -13252,6 +13273,22 @@ function clearPendingSave_(jobNo) {
 
 function pendingSaveServerMatch_(serverJob, pendingUpdates) {
   // Returns true when the server data already reflects the pending save — GAS has committed it.
+  // NOTE: status and payment MUST be checked here. Before this check existed, a
+  // status-only save (e.g. Collected) was treated as "committed" immediately, the
+  // pending save was cleared, and if the backend write was lost the job silently
+  // reverted to its old status ~30s later with no warning.
+  if (pendingUpdates.systemStatus !== undefined && serverJob.status !== pendingUpdates.systemStatus) {
+    // toLocalJob rewrites waiting-payment statuses for Pay on Collection jobs —
+    // account for that mapping before declaring a mismatch.
+    const poc = String(serverJob.payment || "") === "Pay on Collection";
+    const rewritten = poc
+      ? (pendingUpdates.systemStatus === "Waiting Payment & Artwork" ? "Waiting Artwork"
+        : pendingUpdates.systemStatus === "Waiting Payment" ? "Ready"
+        : pendingUpdates.systemStatus)
+      : pendingUpdates.systemStatus;
+    if (serverJob.status !== rewritten) return false;
+  }
+  if (pendingUpdates.paymentStatus !== undefined && serverJob.payment !== pendingUpdates.paymentStatus) return false;
   if (pendingUpdates.specs !== undefined && serverJob.specs !== pendingUpdates.specs) return false;
   if (pendingUpdates.category !== undefined && serverJob.category !== pendingUpdates.category) return false;
   if (pendingUpdates.product !== undefined && serverJob.product !== pendingUpdates.product) return false;
@@ -13270,7 +13307,13 @@ function loadPendingSavesStore_() {
   } catch (_e) { return {}; }
 }
 
-function addCommLogEntry_(job, type, note) {
+// Records a comm-log entry in local state + localStorage WITHOUT firing a network
+// save. Returns the new log array. Used when the caller is about to save the same
+// job anyway, so the log rides along in ONE updateJob request — two concurrent
+// writes to the same sheet row race each other on the backend (whole-row
+// read-modify-write with no lock), and the slower stale write can revert the
+// faster one (e.g. "Collected" flipping back to "Ready for Collection").
+function addCommLogEntryLocal_(job, type, note) {
   const staff = state.staffName || "?";
   const ts = new Date().toISOString();
   const entry = { ts, type: String(type || "Other"), note: String(note || "").trim(), staff };
@@ -13284,7 +13327,55 @@ function addCommLogEntry_(job, type, note) {
   const store = loadCommLogStore_();
   store[job.jobNo] = newLog;
   saveCommLogStore_(store);
+  return newLog;
+}
+
+function addCommLogEntry_(job, type, note) {
+  const newLog = addCommLogEntryLocal_(job, type, note);
   saveJobChanges(job.jobNo, { commLog: JSON.stringify(newLog) }, { keepTab: true, quiet: true, optimistic: true, noMerge: true });
+}
+
+// ── WhatsApp desktop-app launcher ────────────────────────────────────────────
+// wa.me links open WhatsApp WEB in the browser, which has its own login session
+// — being signed in to the WhatsApp desktop app doesn't help, so some PCs land
+// on a QR/login page. Instead we first try the whatsapp:// protocol (opens the
+// installed desktop app directly) and only fall back to wa.me if nothing
+// handles it within a couple of seconds.
+function waAppUrlFromWaMe_(url) {
+  const m = String(url || "").match(/wa\.me\/(\d+)(?:\?text=(.*))?$/);
+  if (!m) return "";
+  return `whatsapp://send?phone=${m[1]}${m[2] ? `&text=${m[2]}` : ""}`;
+}
+
+function openNotifyUrl_(notify) {
+  if (!notify || !notify.url) return;
+  const url = notify.url;
+  const isWa = String(notify.type || "") === "whatsapp" || /(wa\.me|api\.whatsapp\.com)/.test(url);
+  const appUrl = isWa ? waAppUrlFromWaMe_(url) : "";
+  if (!isWa || !appUrl) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  // Fallback to WhatsApp Web only if the desktop app didn't take focus.
+  const timer = setTimeout(() => {
+    cleanup();
+    if (!document.hidden) window.open(url, "_blank", "noopener,noreferrer");
+  }, 2500);
+  const cancel = () => { cleanup(); };
+  const onVis = () => { if (document.hidden) cleanup(); };
+  function cleanup() {
+    clearTimeout(timer);
+    document.removeEventListener("visibilitychange", onVis);
+    window.removeEventListener("blur", cancel);
+  }
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("blur", cancel);
+  try {
+    window.location.href = appUrl;
+  } catch (_e) {
+    cleanup();
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 }
 
 function buildCustomerNotify_(job) {
@@ -13682,6 +13773,14 @@ async function loadLiveData(options = {}) {
             clearPendingSave_(serverJob.jobNo); // GAS has committed — no longer needed
           } else {
             merged = applyLocalJobUpdates_(merged, pendingSave.updates);
+            // A save the server still hasn't reflected after 45s deserves a loud
+            // warning — never let a change evaporate silently.
+            if (!pendingSave.warned && (now - Number(pendingSave.ts || 0)) > 45000) {
+              markPendingSaveWarned_(serverJob.jobNo);
+              const what = pendingSave.updates && pendingSave.updates.systemStatus
+                ? `status "${pendingSave.updates.systemStatus}"` : "a change";
+              showToast_(`⚠ ${serverJob.jobNo}: ${what} hasn't been confirmed by the server yet — please re-check this job`, "error");
+            }
           }
         }
         return merged;
