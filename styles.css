@@ -2581,3 +2581,56 @@ th {
 }
 .ipl-g-job:hover { background: var(--primary-soft); }
 .ipl-g-job:hover .ipl-g-num { color: var(--primary); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Unified card design — Staff Board / Owner Dashboard / Cancelled queue cards
+   now share the In-House Pipeline card anatomy: product first, customer,
+   small job number, computed urgency on the top edge, staff avatar.
+   These rules intentionally override the legacy .job-card layout above.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.job-card {
+  display: block;
+  min-height: 0;
+  padding: 11px 12px;
+  border-left: 1px solid rgba(0,0,0,0.08); /* category colour edge retired — lane already says the category */
+  border-top: 3px solid transparent;
+  position: relative;
+}
+.job-card[data-category="inhouse"],
+.job-card[data-category="outsourced"],
+.job-card[data-category="ink"],
+.job-card[data-category="returns"],
+.job-card[data-category="design"] { border-left-color: rgba(0,0,0,0.08); }
+.job-card.ipl-overdue  { border-top-color: #c0392b; }
+.job-card.ipl-due-soon { border-top-color: #f2a71b; }
+
+.jc-product {
+  font-size: 14.5px;
+  font-weight: var(--fw-heavy);
+  letter-spacing: -0.01em;
+  padding-right: 30px;
+  line-height: 1.25;
+}
+.jc-cust {
+  font-size: var(--fs-small);
+  color: var(--muted);
+  margin-top: 2px;
+}
+.jc-num {
+  font-size: 10.5px;
+  color: #a4abb8;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.04em;
+  margin-top: 1px;
+}
+.job-card .job-meta { margin-top: 9px; gap: 6px; }
+.job-card .ipl-pill { min-height: 0; }
+/* Harmonise status chips with pipeline pills */
+.job-card .badge {
+  border-radius: 6px;
+  padding: 3.5px 8px;
+  font-size: 10.5px;
+  min-height: 0;
+  letter-spacing: 0.02em;
+}

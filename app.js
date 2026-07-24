@@ -4230,15 +4230,44 @@ function renderRefreshIndicator_() {
 // ─────────────────────────────────────────────────────────────────────────
 
 function card(job) {
-  const t = document.getElementById("card-template").content.cloneNode(true);
-  const cardEl = t.querySelector(".job-card");
+  // Unified card design — same anatomy as the In-House Pipeline cards:
+  // product first, customer, small job number, urgency edge + pills, avatar.
+  // Returns a DocumentFragment (like the old template clone) so existing
+  // callers that do node.querySelector(".job-card") keep working.
+  const t = document.createDocumentFragment();
+  const cardEl = document.createElement("article");
+  cardEl.className = "job-card";
+  t.appendChild(cardEl);
   cardEl.dataset.category = getCategoryTheme_(job.category).key;
-  t.querySelector(".job-no").textContent = job.jobNo;
-  t.querySelector(".job-customer").textContent = job.customer;
-  t.querySelector(".job-product").textContent = job.product;
+
+  const isTerminalCard = ["Collected", "Closed", "Completed", "Cancelled"].includes(String(job.status || ""));
+  const dueMeta = isTerminalCard ? { cls: "", pill: "", pillCls: "", label: "" } : iplDueMeta_(job);
+  if (dueMeta.cls) cardEl.classList.add(dueMeta.cls);
+
+  cardEl.innerHTML = `
+    ${iplStaffAvatar_(job)}
+    <div class="jc-product">${escapeHtml(job.product || "(no product)")}</div>
+    <div class="jc-cust">${escapeHtml(job.customer || "")}</div>
+    <div class="jc-num">${escapeHtml(job.jobNo)}</div>
+    <div class="job-meta"></div>
+  `;
+  const meta = cardEl.querySelector(".job-meta");
+
+  // Due pill: computed urgency (overdue / due today / due tomorrow) or neutral date.
   const dateLabel = String(job.dateLabel || "Due");
-  t.querySelector(".due").textContent = `${dateLabel}: ${job.due}`;
-  const badge = t.querySelector(".badge");
+  const due = document.createElement("span");
+  if (dueMeta.pill) {
+    due.className = `ipl-pill ${dueMeta.pillCls}`;
+    due.textContent = dueMeta.pill;
+  } else {
+    due.className = "ipl-pill ipl-pill-due";
+    due.textContent = dueMeta.label || `${dateLabel}: ${job.due}`;
+  }
+  meta.appendChild(due);
+
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  meta.appendChild(badge);
   if (state.savingJobNos.has(job.jobNo)) {
     badge.textContent = "Updating…";
     badge.classList.add("saving");
