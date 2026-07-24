@@ -4186,7 +4186,7 @@ function buildPanelHtml_(job) {
 
 // ── Toast notifications ───────────────────────────────────────────────────
 
-function showToast_(message, type = "info") {
+function showToast_(message, type = "info", action = null) {
   let container = document.getElementById("toast-container");
   if (!container) {
     container = document.createElement("div");
@@ -4197,12 +4197,23 @@ function showToast_(message, type = "info") {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
+  if (action && action.label && typeof action.onClick === "function") {
+    const btn = document.createElement("button");
+    btn.className = "toast-action";
+    btn.textContent = action.label;
+    btn.onclick = () => {
+      toast.classList.remove("show");
+      toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+      action.onClick();
+    };
+    toast.appendChild(btn);
+  }
   container.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add("show"));
   setTimeout(() => {
     toast.classList.remove("show");
     toast.addEventListener("transitionend", () => toast.remove(), { once: true });
-  }, 3500);
+  }, action ? 6000 : 3500);
 }
 
 // ── Refresh indicator ─────────────────────────────────────────────────────
@@ -5883,7 +5894,7 @@ function renderCompletedJobs() {
   panel.className = "panel";
   panel.innerHTML = "<h3>Completed Jobs</h3>";
 
-  const completed = state.jobs
+  const completed = applySearchFilter_(state.jobs)
     .filter(j => !isSoftDeleted_(j))
     .filter(j => isJobCompleted_(j))
     .sort((a, b) => String(b.due || "").localeCompare(String(a.due || "")));
@@ -7086,6 +7097,10 @@ function fastLaneUpdate_(updatedJob) {
 }
 
 function optimisticPillUpdate_(job, updates, panel) {
+  // Undo saves restore the EXACT prior status — skip side effects like the
+  // Mimaki auto-queue that normally fire on a fresh "Ready" save.
+  const isUndoSave = !!updates.__isUndo;
+  if (isUndoSave) { updates = { ...updates }; delete updates.__isUndo; }
   // Apply change locally and re-render immediately — no waiting for the network.
   const idx = state.jobs.findIndex(j => j.jobNo === job.jobNo);
   const snapshot = idx >= 0 ? { ...state.jobs[idx] } : null;
@@ -7123,9 +7138,23 @@ function optimisticPillUpdate_(job, updates, panel) {
   if (!fastLaneUpdate_(updatedJob)) render();
   // Re-render the open panel so its pills reflect the optimistic state immediately.
   refreshOpenPanel_();
+  // Undo affordance: a quick-pill tap advances a job instantly (easy to
+  // mis-tap, especially on a phone). Offer a 6s undo for plain status-only
+  // changes; flows that also record payment (Collected via the gate) are
+  // excluded because reverting money fields needs deliberate action.
+  const prevStatusForUndo = snapshot ? snapshot.status : null;
+  const isPlainStatusChange = hasStatusChange && !("paymentStatus" in updates) && prevStatusForUndo && prevStatusForUndo !== updates.systemStatus;
+  if (isPlainStatusChange && !isUndoSave) {
+    showToast_(`${job.jobNo} → ${updates.systemStatus}`, "info", {
+      label: "Undo",
+      onClick: () => {
+        optimisticPillUpdate_(job, { systemStatus: prevStatusForUndo, __isUndo: true }, panel);
+      },
+    });
+  }
   // Fire API in background — revert on failure. One request carries status,
   // payment AND the comm-log entry so nothing can race on the backend row.
-  saveJobChanges(job.jobNo, mergedUpdates, { keepTab: true, quiet: true, optimistic: true }).then(ok => {
+  saveJobChanges(job.jobNo, mergedUpdates, { keepTab: true, quiet: true, optimistic: true, skipAutoQueue: isUndoSave }).then(ok => {
     state.savingJobNos.delete(job.jobNo);
     // Refresh panel again after server responds — catches any server-side status changes.
     const currentJob = idx >= 0 ? state.jobs.find(j => j.jobNo === job.jobNo) || state.jobs[idx] : updatedJob;
@@ -7135,6 +7164,14 @@ function optimisticPillUpdate_(job, updates, panel) {
       const revertIdx = state.jobs.findIndex(j => j.jobNo === job.jobNo);
       if (revertIdx >= 0) state.jobs[revertIdx] = snapshot;
       delete state.recentSaves[job.jobNo];
+      // Roll the localStorage comm-log store back too, otherwise the auto
+      // "Status → X" entry for this FAILED save survives page reloads and the
+      // history shows a change that never happened.
+      try {
+        const logStore = loadCommLogStore_();
+        logStore[job.jobNo] = Array.isArray(snapshot.commLog) ? snapshot.commLog : [];
+        saveCommLogStore_(logStore);
+      } catch (_e) {}
       state.saveMessage = "Save failed — please try again";
       if (!fastLaneUpdate_(snapshot)) render();
       refreshOpenPanel_();
@@ -7589,7 +7626,7 @@ function renderAlerts() {
   const renderRows = () => {
     const includeInfo = !!includeInfoToggle.checked;
     body.innerHTML = "";
-    state.jobs.filter(j => {
+    applySearchFilter_(state.jobs).filter(j => {
       if (isSoftDeleted_(j)) return false;
       const supplier = String(j.supplier || "").toUpperCase();
       const tvrWatch = supplier.startsWith("TVR");
@@ -7609,6 +7646,9 @@ function renderAlerts() {
             ? "TVR WATCH (Warning)"
             : "URGENT REQUEST (Info)"));
       tr.innerHTML = `<td>${type}</td><td>${j.jobNo}</td><td>${j.customer}</td><td>${j.status}</td>`;
+      // Every other list in the app opens the job on click — alerts should too.
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", () => { state.selectedJobNo = j.jobNo; openJobPanel_(j.jobNo); });
       body.appendChild(tr);
     });
   };
@@ -9759,7 +9799,7 @@ function renderBatching() {
 
   const isOwnerOrAdmin = state.role === "owner" || state.role === "admin";
 
-  const outsourced = state.jobs.filter(j =>
+  const outsourced = applySearchFilter_(state.jobs).filter(j =>
     !isSoftDeleted_(j) &&
     j.category === "Outsourced" &&
     ["Ready to Order", "Order Placed", "In Production", "Ready for Collection"].includes(j.status)
@@ -9771,7 +9811,7 @@ function renderBatching() {
   }));
 
   if (isOwnerOrAdmin) {
-    const ink = state.jobs.filter(j =>
+    const ink = applySearchFilter_(state.jobs).filter(j =>
       !isSoftDeleted_(j) &&
       j.category === "Ink/Stock" &&
       ["Ready to Order", "Order Placed", "Backordered", "Ready for Collection"].includes(j.status)
@@ -9782,7 +9822,7 @@ function renderBatching() {
       showSupplier: true,
     }));
 
-    const dtf = state.jobs.filter(j => {
+    const dtf = applySearchFilter_(state.jobs).filter(j => {
       if (isSoftDeleted_(j)) return false;
       if (!isDtfJob_(j)) return false;
       if (j.category === "In-house") return ["Ready", "Batched (DTF Order)", "DTF Order Placed", "In Production", "Ready for Collection"].includes(j.status);
@@ -10172,7 +10212,7 @@ function renderVinylQueue() {
     <div class="finder-subtitle">Jobs grouped by media type. Tick Printed when off the machine, Finished when packed and ready for collection.</div>
   `;
 
-  const jobs = state.jobs
+  const jobs = applySearchFilter_(state.jobs)
     .filter(j => !isSoftDeleted_(j))
     .filter(j => j.category === "In-house")
     .filter(j => isMimakiJob_(j))
@@ -10419,7 +10459,7 @@ function renderIntake() {
         <div class="kv"><label></label><div></div></div>
       </div>
       <div class="grid-2">
-        <div class="kv"><label>Promised Due Date</label><input id="ji-promised" type="date" /></div>
+        <div class="kv"><label>Promised Due Date</label><input id="ji-promised" type="date" min="${formatYmdLocal_(new Date())}" /></div>
         <div class="kv" id="ji-urgent-row" style="display:none;"><label>Urgent Request (In-house)</label><select id="ji-urgent"><option value="No">No</option><option value="Yes">Yes</option></select></div>
       </div>
       <div class="kv"><label></label><div id="ji-due-hint">Suggested automatically from job type/turnaround.</div></div>
@@ -11215,6 +11255,23 @@ function renderIntake() {
       if (!payload.artworkSource.trim() && !hasArtworkInput) errors.push("Artwork Source is required when no artwork is uploaded.");
       if (sourceRequiresArtworkNow && !hasArtworkInput) {
         errors.push("Artwork file/upload link is required for the selected Artwork Source.");
+      }
+    }
+    // Promised due date: without one, a job never shows as overdue/due-today
+    // anywhere in the app. Auto-fill the suggested date when we can, then
+    // require it for job types that get scheduled; reject past dates.
+    if (["In-house Printing", "Outsourced Printing", "Ink/Stock Order"].includes(jobType)) {
+      if (!String(payload.promisedDueDate || "").trim()) {
+        const autoDue = getSuggestedDueDateForInputs_(jobType, payload.turnaroundPurchased || "");
+        if (autoDue) {
+          payload.promisedDueDate = autoDue;
+          if (dueInput) dueInput.value = autoDue;
+        } else {
+          errors.push("Promised Due Date is required.");
+        }
+      }
+      if (String(payload.promisedDueDate || "").trim() && payload.promisedDueDate < formatYmdLocal_(new Date())) {
+        errors.push("Promised Due Date cannot be in the past.");
       }
     }
     if (jobType !== "Cartridge Return" && payload.paymentStatus === "Paid" && !String(payload["Hike Quote / Sale Reference"] || "").trim()) {
@@ -13071,7 +13128,16 @@ function render() {
       return;
     }
     if (state.error) {
-      app.innerHTML = `<section class="panel"><h3>Live API unavailable</h3><p>${state.error}</p><p>Showing demo data.</p></section>`;
+      app.innerHTML = `
+        <section class="panel">
+          <h3>Live API unavailable</h3>
+          <p>${escapeHtml(state.error)}</p>
+          <p>${state.jobs.length ? "Showing the last jobs loaded — they may be out of date." : "No jobs loaded. Check the internet connection, then retry."}</p>
+          <div class="actions" style="margin-top:10px;"><button id="retry-load-btn">Retry now</button></div>
+        </section>`;
+      const retryBtn = app.querySelector("#retry-load-btn");
+      if (retryBtn) retryBtn.onclick = () => { state.error = ""; loadLiveData(); };
+      if (!state.jobs.length) return;
     }
     if (state.tab === "staff_board") {
       app.appendChild(renderBoard(false));
@@ -13673,7 +13739,7 @@ async function saveJobChanges(jobNo, updates, options = {}) {
     }
     const msg = `Save failed: ${raw}`;
     if (!quiet) state.saveMessage = msg;
-    else window.alert(msg);
+    else showToast_(msg, "error");
     if (renderDuringSave) render();
     return false;
   } finally {
@@ -13712,7 +13778,11 @@ async function bulkSaveJobChanges_(items) {
         else state.jobs.push(next);
       });
     } else {
+      // Only apply optimistic local state for jobs the server did NOT reject.
+      const errorsPre = Array.isArray(payload.data && payload.data.errors) ? payload.data.errors : [];
+      const failedNos = new Set(errorsPre.map(e => String(e.jobNo || "")).filter(Boolean));
       payloadItems.forEach(item => {
+        if (failedNos.has(String(item.jobNo))) return;
         const idx = state.jobs.findIndex(j => j.jobNo === item.jobNo);
         if (idx >= 0) {
           state.jobs[idx] = applyLocalJobUpdates_(state.jobs[idx], item.updates || {});
@@ -13722,16 +13792,22 @@ async function bulkSaveJobChanges_(items) {
 
     const errors = Array.isArray(payload.data && payload.data.errors) ? payload.data.errors : [];
     if (errors.length) {
-      window.alert(`Bulk update completed with ${errors.length} error(s).`);
+      // Name the failed jobs so staff know exactly what to redo — a bare count
+      // used to leave failed jobs looking saved until a refresh reverted them.
+      const failedList = errors.map(e => e.jobNo || `item ${e.index}`).join(", ");
+      showToast_(`⚠ ${errors.length} job${errors.length === 1 ? "" : "s"} failed to save: ${failedList} — please redo`, "error");
+      state.saveMessage = `Saved with ${errors.length} error(s)`;
+      scheduleSilentRefresh_(3000);
+    } else {
+      state.saveMessage = "Batch updates saved";
+      scheduleSilentRefresh_(15000);
     }
-    state.saveMessage = "Batch updates saved";
     render();
-    scheduleSilentRefresh_(15000);
     return true;
   } catch (err) {
     const raw = String(err && err.message ? err.message : err);
     if (!raw.toLowerCase().includes("no valid update fields provided")) {
-      window.alert(`Bulk save failed: ${raw}`);
+      showToast_(`Bulk save failed: ${raw}`, "error");
     }
     return false;
   } finally {
@@ -13868,7 +13944,10 @@ async function loadLiveData(options = {}) {
   } catch (err) {
     if (!silent) {
       state.error = String(err && err.message ? err.message : err);
-      state.jobs = demoJobs.slice();
+      // Never seed demo data in production — staff could mistake sample jobs
+      // for real ones and act on them. Keep whatever real jobs we already
+      // have (e.g. from a previous successful load); otherwise stay empty and
+      // let the error panel + Retry button explain the situation.
     }
   } finally {
     if (!silent) {

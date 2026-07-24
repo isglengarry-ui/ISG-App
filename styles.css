@@ -2038,8 +2038,20 @@ th {
 }
 
 @media (max-width: 720px) {
-  .topbar { grid-template-columns: 1fr auto auto; }
-  .topbar-search { display: none; }
+  /* Search stays usable on phones — it's the most common counter action.
+     Topbar wraps to two rows: title + controls, then full-width search. */
+  .topbar {
+    grid-template-columns: 1fr auto auto;
+    height: auto;
+    padding: 10px 16px;
+    row-gap: 8px;
+  }
+  .topbar-search {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .topbar-search input { width: 100%; }
   .topbar .role:last-child { display: none; }
   .topbar .refresh-indicator { display: none; }
 
@@ -2634,3 +2646,17 @@ th {
   min-height: 0;
   letter-spacing: 0.02em;
 }
+
+/* Toast action button (e.g. Undo on quick status changes) */
+.toast .toast-action {
+  margin-left: 10px;
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.4);
+  color: inherit;
+  font-size: 12px;
+  font-weight: var(--fw-bold);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.toast .toast-action:hover { background: rgba(255,255,255,0.28); }
